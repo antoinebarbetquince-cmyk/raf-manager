@@ -547,6 +547,10 @@ function calcScore(t){
   return Math.min(s,99);
 }
 
+
+// ── HTML ESCAPE HELPER ──
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 // ── APP CONFIG ──
 // Personnalisez ici ou connectez Supabase pour une config dynamique
 const APP_CONFIG = {
@@ -780,11 +784,11 @@ function renderSidebarCats(){
   const el=document.getElementById('cat-sidebar-list');if(!el)return;
   const open=t=>t.status!=='done';
   el.innerHTML=cats.map(c=>`
-    <div class="sidebar-cat-item ${currentView==='cat-'+c.name?'active':''}" onclick="setView('cat-${c.name}',this)">
+    <div class="sidebar-cat-item ${currentView===('cat-'+c.name)?'active':''}" onclick="setView('cat-'+this.dataset.cat,this)" data-cat="${c.name}">
       <span class="sidebar-icon">${c.icon}</span>
       <span class="sidebar-label" style="flex:1;font-size:13px;color:${currentView==='cat-'+c.name?'var(--text-primary)':'var(--text-secondary)'}">${c.name}</span>
       <span class="sidebar-count">${tasks.filter(t=>open(t)&&t.cat===c.name).length}</span>
-      <div class="cat-actions"><button class="cat-btn" onclick="event.stopPropagation();openCatModal('${c.name}')" title="Modifier">✏️</button></div>
+      <div class="cat-actions"><button class="cat-btn" data-catname="${c.name.replace(/'/g,'&apos;')}" onclick="event.stopPropagation();openCatModal(this.dataset.catname)" title="Modifier">✏️</button></div>
     </div>`).join('');
 }
 
@@ -891,7 +895,7 @@ function setPF(v){prioFilter=v;renderMain()}
 function taskHTML(t){
   const s=calcScore(t);const ov=daysLeft(t.due)<0&&t.status!=='done';
   const tid=JSON.stringify(String(t.id));
-  return`<div class="task-item ${ov?'overdue-item':''} ${selectedId===t.id?'selected':''}" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
+  return`<div class="task-item ${ov?'overdue-item':''} ${String(selectedId)===String(t.id)?'selected':''}" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
     <div class="task-circle ${t.status==='done'?'done':t.prio==='critique'?'crit':''}" data-tid="${t.id}" onclick="event.stopPropagation();toggleDone(this.dataset.tid)"></div>
     <div class="task-body">
       <div class="task-name ${t.status==='done'?'done':''}">${hl(t.title)}${t.myjour&&currentView!=='myjour'?'<span class="myjour-tag">☀️</span>':''}${t.recur?`<span class="chip chip-recur" style="margin-left:5px;font-size:9px">🔁 ${recurLbl(t.recur)}</span>`:''}</div>
@@ -1014,14 +1018,14 @@ function renderDashboard(el){
   // Recent notifications
   const recentNotifs=notifications.slice(0,5).map(n=>`<div class="dash-notif-item">
     <div class="dash-notif-dot" style="background:${n.type==='danger'?'var(--red)':n.type==='warning'?'var(--orange)':'var(--accent)'}"></div>
-    <div class="dash-notif-text"><strong>${n.title}</strong><br>${n.sub}</div>
+    <div class="dash-notif-text"><strong>${esc(n.title)}</strong><br>${esc(n.sub)}</div>
     <span class="dash-notif-time">${n.time}</span>
   </div>`).join('') || '<div style="color:var(--text-muted);font-size:12px;padding:8px 0">Aucune alerte</div>';
 
   // Top tasks
   const topTasks=sorted.slice(0,5).map(t=>`<div class="dash-recent-task" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
     <div class="dash-notif-dot" style="background:${t.prio==='critique'?'var(--red)':t.prio==='haute'?'var(--orange)':'var(--accent)'}"></div>
-    <span class="dash-recent-title">${t.title}</span>
+    <span class="dash-recent-title">${esc(t.title)}</span>
     <span class="task-due ${daysLeft(t.due)<0?'overdue':''}" style="font-size:10px;flex-shrink:0">${fmtD(t.due)}</span>
   </div>`).join('');
 
@@ -1111,8 +1115,8 @@ function renderPlanning(el){
       data-tid="${t.id}" ondragstart="planDragStart(event,this.dataset.tid)"
       ondragend="planDragEnd(event)"
       data-tid="${t.id}" onclick="selectTask(this.dataset.tid)"
-      title="${t.title} — glisser pour déplacer">
-      <div class="plan-task-title">${t.title}</div>
+      title="${esc(t.title)} — glisser pour déplacer">
+      <div class="plan-task-title">${esc(t.title)}</div>
       <div class="plan-task-meta">${catIcon(t.cat)} ${t.cat} · ${t.time}h${t.myjour?' ☀️':''}${t.recur?' 🔁':''}</div>
     </div>`).join('');
     cols+=`<div class="plan-col ${isToday?'today-col':''}">
@@ -1179,7 +1183,7 @@ function renderPlanningJour(el){
     data-tid="${t.id}" ondragstart="pjDragStart(event,this.dataset.tid,'unscheduled')"
     ondragend="pjDragEnd(event)"
     onclick="selectTask(this.dataset.tid)">
-    <div class="pj-us-title">${t.title}</div>
+    <div class="pj-us-title">${esc(t.title)}</div>
     <div class="pj-us-meta">${catIcon(t.cat)} ${t.cat} · ${t.time}h · ${prioLbl(t.prio)}</div>
   </div>`).join('');
 
@@ -1190,7 +1194,7 @@ function renderPlanningJour(el){
       data-tid="${t.id}" ondragstart="pjDragStart(event,this.dataset.tid,'slot',${h})"
       ondragend="pjDragEnd(event)"
       onclick="event.stopPropagation();selectTask(this.closest('[data-tid]').dataset.tid)">
-      <div class="pj-placed-title">${t.title}</div>
+      <div class="pj-placed-title">${esc(t.title)}</div>
       <div class="pj-placed-meta"><span>${catIcon(t.cat)}</span><span>${t.time}h</span><span class="${'chip '+chipCls(t.prio).split(' ')[1]}" style="font-size:9px;padding:1px 5px">${prioLbl(t.prio)}</span></div>
       <button class="pj-remove-btn" data-tid="${t.id}" data-hour="${h}" onclick="event.stopPropagation();pjRemove(this.dataset.tid,this.dataset.hour)" title="Retirer">✕</button>
     </div>`).join('');
@@ -1302,7 +1306,7 @@ function renderKanban(el){
         data-tid="${t.id}" ondragstart="kbDragStart(event,this.dataset.tid)"
         ondragend="kbDragEnd(event)"
         onclick="selectTask(this.dataset.tid)">
-        <div class="kb-card-title">${t.title}${t.recur?` <span style="font-size:9px;color:var(--purple)">🔁</span>`:''}</div>
+        <div class="kb-card-title">${esc(t.title)}${t.recur?` <span style="font-size:9px;color:var(--purple)">🔁</span>`:''}</div>
         <div class="kb-card-meta">
           <span class="${chipCls(t.prio)}">${prioLbl(t.prio)}</span>
           <span class="chip chip-cat">${catIcon(t.cat)} ${t.cat}</span>
@@ -1357,7 +1361,7 @@ function kbDrop(e,status){
   t.status=status;
   if(status==='done'&&t.recur)handleRecurrence(t);
   save(t);renderMain();updateCounts();
-  if(selectedId===id)openDetail(id);
+  if(String(selectedId)===String(id))openDetail(id);
   showToast(`📌 ${t.title} → ${{todo:'À faire',inprogress:'En cours',done:'Terminé'}[status]}`);
 }
 
@@ -1368,7 +1372,7 @@ function renderAIPage(el){
   const notInMJ=sorted.filter(t=>!t.myjour).slice(0,8);
   const inMJ=open.filter(t=>t.myjour);
   const suggestCards=notInMJ.map(t=>`<div class="ai-suggest-task">
-    <div class="ai-suggest-task-title">${t.title}</div>
+    <div class="ai-suggest-task-title">${esc(t.title)}</div>
     <div class="ai-suggest-meta"><span class="${chipCls(t.prio)}">${prioLbl(t.prio)}</span><span class="chip chip-cat">${catIcon(t.cat)} ${t.cat}</span>${dueHTML(t.due,false)}</div>
     <div class="ai-suggest-actions">
       <button class="ai-sug-btn primary" data-tid="${t.id}" onclick="addToMJ(this.dataset.tid)">☀️ Ma journée</button>
@@ -1377,7 +1381,7 @@ function renderAIPage(el){
   </div>`).join('');
   const mjSummary=inMJ.length?`<div style="margin-bottom:12px;padding:10px;background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.2);border-radius:var(--radius-lg)">
     <div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">☀️ Ma journée — ${inMJ.length} tâches · ${inMJ.reduce((a,b)=>a+b.time,0).toFixed(1)}h</div>
-    ${inMJ.map(t=>`<div style="font-size:12px;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px"><span>${t.title}</span><span style="color:var(--text-muted);font-size:11px">${t.time}h</span><button data-tid="${t.id}" onclick="toggleMJ(this.dataset.tid)" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px" title="Retirer">✕</button></div>`).join('')}
+    ${inMJ.map(t=>`<div style="font-size:12px;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px"><span>${esc(t.title)}</span><span style="color:var(--text-muted);font-size:11px">${t.time}h</span><button data-tid="${t.id}" onclick="toggleMJ(this.dataset.tid)" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px" title="Retirer">✕</button></div>`).join('')}
   </div>`:`<div style="margin-bottom:12px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-lg);text-align:center;color:var(--text-muted);font-size:12px">Ajoutez des tâches depuis les suggestions →</div>`;
   const msgsHTML=aiMsgs.map(m=>`<div class="ai-msg ai-msg-${m.role}">${m.text}</div>`).join('');
   el.innerHTML=`
@@ -1410,7 +1414,7 @@ function aiTaskCards(list){
   if(!list.length)return'';
   return list.map(t=>`<div class="ai-task-card">
     <div class="ai-task-card-body">
-      <div class="ai-task-card-title">${t.title}${t.recur?` <span style="font-size:9px;color:var(--purple)">🔁</span>`:''}</div>
+      <div class="ai-task-card-title">${esc(t.title)}${t.recur?` <span style="font-size:9px;color:var(--purple)">🔁</span>`:''}</div>
       <div class="ai-task-card-meta">${prioLbl(t.prio)} · ${fmtD(t.due)} · ${t.time}h · ${catIcon(t.cat)} ${t.cat}</div>
     </div>
     <button class="ai-task-mj-btn ${t.myjour?'on':''}" data-tid="${t.id}" onclick="addToMJFromAI(this.dataset.tid,this)">${t.myjour?'☀️ Ajouté':'☀ Journée'}</button>
@@ -1489,7 +1493,7 @@ function goAI(msg){setView('ai',null);setTimeout(()=>sendAIMsg(msg),100)}
 function onSearch(q){searchQuery=q;currentView=q?'search':'all';renderMain();updateCounts()}
 
 // ── TASK ACTIONS ──
-function toggleMJ(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.myjour=!t.myjour;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
+function toggleMJ(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.myjour=!t.myjour;save(t);renderMain();updateCounts();if(String(selectedId)===String(id))openDetail(id)}
 function addToMJ(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.myjour=true;save(t);renderMain();updateCounts()}
 function toggleDone(id){
   const t=tasks.find(x=>String(x.id)===String(id));
@@ -1498,9 +1502,9 @@ function toggleDone(id){
   t.status=wasDone?'todo':'done';
   if(!wasDone&&t.recur)handleRecurrence(t);
   save(t);renderMain();updateCounts();
-  if(selectedId===id)openDetail(id);
+  if(String(selectedId)===String(id))openDetail(id);
 }
-function toggleStar(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.starred=!t.starred;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
+function toggleStar(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.starred=!t.starred;save(t);renderMain();updateCounts();if(String(selectedId)===String(id))openDetail(id)}
 function deleteTask(){
   if(!selectedId)return;
   if(!confirm('Supprimer cette tâche ?'))return;
