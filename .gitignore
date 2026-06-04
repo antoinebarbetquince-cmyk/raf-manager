@@ -1,0 +1,27 @@
+# Dépendances
+node_modules/
+.npm/
+
+# Variables d'environnement (NE JAMAIS COMMITTER)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Clés Supabase (si externalisées)
+config.local.js
+
+# Système
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# Build
+dist/
+build/
