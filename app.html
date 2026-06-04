@@ -59,11 +59,16 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;background:var(
 .sidebar-group{display:flex;align-items:center;font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;padding:10px 14px 4px;gap:6px}
 .sidebar-group-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:0 2px;border-radius:3px;line-height:1;transition:color .1s}
 .sidebar-group-btn:hover{color:var(--accent)}
-.sidebar-cat-item{display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;transition:background .1s,border-color .1s;position:relative;margin:1px 6px;border-radius:var(--radius);border:1.5px solid transparent}
+.sidebar-cat-item{display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;transition:background .1s,border-color .1s,transform .1s;position:relative;margin:1px 6px;border-radius:var(--radius);border:1.5px solid transparent;user-select:none}
 .sidebar-cat-item:hover{background:rgba(255,255,255,.05)}
 .sidebar-cat-item.active{background:var(--sidebar-active)}
 .sidebar-cat-item.active::before{content:'';position:absolute;left:-6px;top:4px;bottom:4px;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
 .sidebar-cat-item.cat-drag-over{border-color:var(--accent);background:var(--sidebar-active)}
+.sidebar-cat-item.cat-reorder-over{border-top:2px solid var(--accent)}
+.sidebar-cat-item.cat-dragging{opacity:.35;transform:scale(.97)}
+.cat-drag-handle{color:var(--text-muted);font-size:12px;cursor:grab;padding:0 2px;flex-shrink:0;display:none}
+.sidebar-cat-item:hover .cat-drag-handle{display:block}
+.sidebar-cat-item:hover .cat-drag-handle:active{cursor:grabbing}
 .cat-actions{display:none;gap:2px;margin-left:auto}
 .sidebar-cat-item:hover .cat-actions{display:flex}
 .cat-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;padding:2px 4px;border-radius:3px;transition:color .1s}
@@ -850,13 +855,18 @@ function checkAlerts(){
 function renderSidebarCats(){
   const el=document.getElementById('cat-sidebar-list');if(!el)return;
   const open=t=>t.status!=='done';
-  el.innerHTML=cats.map(c=>`
+  el.innerHTML=cats.map((c,idx)=>`
     <div class="sidebar-cat-item ${currentView===('cat-'+c.name)?'active':''}"
-      onclick="setView('cat-'+this.dataset.cat,this)"
       data-cat="${c.name}"
-      ondragover="catDragOver(event)"
-      ondragleave="catDragLeave(event)"
-      ondrop="catDrop(event,this.dataset.cat)">
+      data-idx="${idx}"
+      draggable="true"
+      ondragstart="catReorderStart(event,${idx})"
+      ondragend="catReorderEnd(event)"
+      ondragover="catReorderOver(event)"
+      ondragleave="catReorderLeave(event)"
+      ondrop="catReorderDrop(event,${idx})"
+      onclick="setView('cat-'+this.dataset.cat,this)">
+      <span class="cat-drag-handle" title="Glisser pour réordonner" onclick="event.stopPropagation()">⋮⋮</span>
       <span class="sidebar-icon">${c.icon}</span>
       <span class="sidebar-label" style="flex:1;font-size:13px;color:${currentView===('cat-'+c.name)?'var(--text-primary)':'var(--text-secondary)'}">${c.name}</span>
       <span class="sidebar-count">${tasks.filter(t=>open(t)&&t.cat===c.name).length}</span>
@@ -1691,28 +1701,72 @@ function taskDragEnd(e){
   document.querySelectorAll('.sidebar-cat-item').forEach(el=>el.classList.remove('cat-drag-over'));
   taskDragId=null;
 }
-function catDragOver(e){
+// catDragOver / catDragLeave / catDrop → gérés par catReorderOver/Leave/Drop
+// ── RÉORDONNEMENT DES CATÉGORIES ──
+let catDragIdx=null;
+function catReorderStart(e,idx){
+  catDragIdx=idx;
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain','cat:'+idx);
+  setTimeout(()=>e.currentTarget.classList.add('cat-dragging'),0);
+  // Empêche le drop sur une tâche de se déclencher
+  e.stopPropagation();
+}
+function catReorderEnd(e){
+  e.currentTarget.classList.remove('cat-dragging');
+  document.querySelectorAll('.sidebar-cat-item').forEach(el=>{
+    el.classList.remove('cat-reorder-over','cat-drag-over');
+  });
+  catDragIdx=null;
+}
+function catReorderOver(e){
+  // Si c'est un drag de tâche (pas de catégorie), utiliser catDragOver normal
+  if(catDragIdx===null&&taskDragId){
+    e.preventDefault();
+    e.currentTarget.classList.add('cat-drag-over');
+    return;
+  }
+  if(catDragIdx===null)return;
   e.preventDefault();
+  e.stopPropagation();
   e.dataTransfer.dropEffect='move';
-  e.currentTarget.classList.add('cat-drag-over');
+  e.currentTarget.classList.add('cat-reorder-over');
 }
-function catDragLeave(e){
-  if(!e.currentTarget.contains(e.relatedTarget))
-    e.currentTarget.classList.remove('cat-drag-over');
+function catReorderLeave(e){
+  if(!e.currentTarget.contains(e.relatedTarget)){
+    e.currentTarget.classList.remove('cat-reorder-over','cat-drag-over');
+  }
 }
-function catDrop(e,catName){
+function catReorderDrop(e,targetIdx){
   e.preventDefault();
-  e.currentTarget.classList.remove('cat-drag-over');
-  const id=taskDragId||e.dataTransfer.getData('text/plain');
-  if(!id||!catName)return;
-  const t=tasks.find(x=>String(x.id)===String(id));
-  if(!t)return;
-  if(t.cat===catName)return;
-  const old=t.cat;
-  t.cat=catName;
-  save(t);renderMain();updateCounts();
-  showToast(esc(t.title)+' → '+catIcon(catName)+' '+catName);
+  e.currentTarget.classList.remove('cat-reorder-over','cat-drag-over');
+
+  // Si c'est un drag de tâche → changer sa catégorie
+  const data=e.dataTransfer.getData('text/plain');
+  if(!data.startsWith('cat:')&&(taskDragId||data)){
+    const id=taskDragId||data;
+    const catName=e.currentTarget.dataset.cat;
+    if(id&&catName){
+      const t=tasks.find(x=>String(x.id)===String(id));
+      if(t&&t.cat!==catName){
+        t.cat=catName;
+        save(t);renderMain();updateCounts();
+        showToast(esc(t.title)+' → '+catIcon(catName)+' '+catName);
+      }
+    }
+    return;
+  }
+
+  // Sinon c'est un réordonnement de catégorie
+  if(catDragIdx===null||catDragIdx===targetIdx)return;
+  const moved=cats.splice(catDragIdx,1)[0];
+  cats.splice(targetIdx,0,moved);
+  saveCats();
+  renderSidebarCats();
+  showToast('⋮⋮ Catégories réordonnées');
 }
+
+
 
 // ── NAVIGATION ──
 function setView(v,el){
