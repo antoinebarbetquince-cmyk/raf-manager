@@ -178,6 +178,23 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;background:var(
 .detail-mj-toggle::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;top:2px;left:2px;transition:transform .15s}
 .detail-mj-toggle.on::after{transform:translateX(14px)}
 
+/* ── TASK ROW COLORS ── */
+.task-item.tc-0{border-left:3px solid #10B981}  /* Comptabilité - vert */
+.task-item.tc-1{border-left:3px solid #F59E0B}  /* Trésorerie - orange */
+.task-item.tc-2{border-left:3px solid #4F8EF7}  /* Reporting - bleu */
+.task-item.tc-3{border-left:3px solid #A78BFA}  /* Fiscalité - violet */
+.task-item.tc-4{border-left:3px solid #22D3EE}  /* Contrôle gestion - teal */
+.task-item.tc-5{border-left:3px solid #F472B6}  /* RH - rose */
+.task-item.tc-6{border-left:3px solid #FB923C}  /* Juridique - orange foncé */
+.task-item.tc-7{border-left:3px solid #F05252}  /* Direction - rouge */
+.task-item.tc-8{border-left:3px solid #34D399}  /* Projets - vert clair */
+.task-item.tc-9{border-left:3px solid #94A3B8}  /* Divers - gris */
+.task-item.tc-10{border-left:3px solid #E879F9} /* extra */
+.task-item.tc-11{border-left:3px solid #FCD34D} /* extra */
+.task-item.overdue-item.tc-0,.task-item.overdue-item.tc-1,.task-item.overdue-item.tc-2,
+.task-item.overdue-item.tc-3,.task-item.overdue-item.tc-4,.task-item.overdue-item.tc-5,
+.task-item.overdue-item.tc-6,.task-item.overdue-item.tc-7,.task-item.overdue-item.tc-8,
+.task-item.overdue-item.tc-9{border-left:3px solid var(--red)}
 /* ── PLANNING ── */
 .planning-wrap{flex:1;overflow:auto;padding:12px 22px 20px}
 .planning-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-width:700px}
@@ -539,6 +556,31 @@ const todayStr=()=>TODAY.toISOString().slice(0,10);
 const addDays=(d,n)=>{const dt=new Date(d+'T12:00');dt.setDate(dt.getDate()+n);return dt.toISOString().slice(0,10)};
 const addMonths=(d,n)=>{const dt=new Date(d+'T12:00');dt.setMonth(dt.getMonth()+n);return dt.toISOString().slice(0,10)};
 
+function nextWorkingDay(dateStr){
+  const d=new Date(dateStr+'T12:00');
+  d.setDate(d.getDate()+1);
+  // Skip Saturday (6) and Sunday (0)
+  while(d.getDay()===6||d.getDay()===0) d.setDate(d.getDate()+1);
+  return d.toISOString().slice(0,10);
+}
+
+function postponeToNextWorkingDay(id){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+  const newDue=nextWorkingDay(todayStr());
+  t.due=newDue;
+  t.myjour=false;
+  save(t);renderMain();updateCounts();
+  showToast('📅 Reporté au '+fmtFull(newDue));
+}
+
+function postponeAllToday(){
+  const todayTasks=tasks.filter(t=>t.status!=='done'&&t.due===todayStr());
+  const newDue=nextWorkingDay(todayStr());
+  todayTasks.forEach(t=>{t.due=newDue;t.myjour=false;save(t);});
+  renderMain();updateCounts();
+  showToast(`⏭ ${todayTasks.length} tâche(s) reportée(s) au `+fmtFull(newDue));
+}
+
 function calcScore(t){
   if(t.status==='done')return 0;
   let s=0,dl=daysLeft(t.due);
@@ -559,6 +601,8 @@ const APP_CONFIG = {
   supabaseUrl: 'https://nrlwghitxiqxwzadrnqi.supabase.co',
   supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ybHdnaGl0eGlxeHd6YWRybnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NDY2MDUsImV4cCI6MjA5NjEyMjYwNX0.RbnSwtlTNwifp6upg3f9wlJ310RupJu_3salfugox_U',
   useSupabase: true,
+  claudeApiKey: localStorage.getItem('raf_claude_key') || '', // Clé API Claude Anthropic
+  useClaudeAI: false, // passer à true après avoir configuré la clé
 };
 
 // ── DATA ──
@@ -891,11 +935,17 @@ function sortTasks(list){
 function cycleSort(){const m=['score','due','alpha'];sortMode=m[(m.indexOf(sortMode)+1)%m.length];renderMain()}
 function setPF(v){prioFilter=v;renderMain()}
 
+// ── TASK COLOR CLASS ──
+function catColorClass(catName){
+  const idx=cats.findIndex(c=>c.name===catName);
+  return idx>=0?'tc-'+idx:'tc-9';
+}
+
 // ── TASK HTML ──
 function taskHTML(t){
   const s=calcScore(t);const ov=daysLeft(t.due)<0&&t.status!=='done';
   const tid=JSON.stringify(String(t.id));
-  return`<div class="task-item ${ov?'overdue-item':''} ${String(selectedId)===String(t.id)?'selected':''}" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
+  return`<div class="task-item ${ov?'overdue-item':''} ${String(selectedId)===String(t.id)?'selected':''} ${catColorClass(t.cat)}" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
     <div class="task-circle ${t.status==='done'?'done':t.prio==='critique'?'crit':''}" data-tid="${t.id}" onclick="event.stopPropagation();toggleDone(this.dataset.tid)"></div>
     <div class="task-body">
       <div class="task-name ${t.status==='done'?'done':''}">${hl(t.title)}${t.myjour&&currentView!=='myjour'?'<span class="myjour-tag">☀️</span>':''}${t.recur?`<span class="chip chip-recur" style="margin-left:5px;font-size:9px">🔁 ${recurLbl(t.recur)}</span>`:''}</div>
@@ -938,18 +988,7 @@ function renderMain(){
     <div class="metric-card"><div class="metric-val mv-green">${tasks.filter(t=>t.status==='done').length}</div><div class="metric-lbl">Terminées</div></div>
   </div>`:'';
   const sorted_open=[...open].sort((a,b)=>calcScore(b)-calcScore(a));
-  const bannerH=`<div class="ai-banner" onclick="setView('ai',null)">
-    <span class="ai-banner-icon">✦</span>
-    <div style="flex:1">
-      <div class="ai-banner-title">Agent IA</div>
-      <div class="ai-banner-text">${open.length} tâches · ${open.reduce((a,b)=>a+b.time,0).toFixed(1)}h${open.filter(t=>daysLeft(t.due)<0).length?` · ⚠ ${open.filter(t=>daysLeft(t.due)<0).length} en retard`:''}</div>
-      <div class="ai-pills">
-        <button class="ai-pill" onclick="event.stopPropagation();goAI('Organise ma journée')">☀️ Journée</button>
-        <button class="ai-pill" onclick="event.stopPropagation();goAI('Mes 5 priorités')">🔥 Priorités</button>
-        <button class="ai-pill" onclick="event.stopPropagation();goAI('Tâches en retard')">⚠️ Retards</button>
-      </div>
-    </div>
-  </div>`;
+  const bannerH='';
   const filterH=showMeta?`<div class="filter-bar">
     ${['all','critique','haute','moyenne','faible'].map(f=>`<button class="filter-chip ${prioFilter===f?'active':''}" onclick="setPF('${f}')">${{all:'Toutes',critique:'Critique',haute:'Haute',moyenne:'Moyenne',faible:'Faible'}[f]}</button>`).join('')}
     <div class="filter-sep"></div>
@@ -992,6 +1031,43 @@ function renderDashboard(el){
   const totalH=open.reduce((a,b)=>a+b.time,0);
   const sorted=[...open].sort((a,b)=>calcScore(b)-calcScore(a));
 
+  // ── Tâches réalisées aujourd'hui ──
+  const doneToday=tasks.filter(t=>t.status==='done'&&t.due===todayStr());
+  const doneTodayH=`
+    <div class="dash-card full" style="border:1px solid var(--green-bg)">
+      <div class="dash-card-title" style="color:var(--green)">✅ Réalisées aujourd'hui (${doneToday.length})</div>
+      ${doneToday.length?doneToday.map(t=>`
+        <div class="dash-recent-task" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
+          <div class="dash-notif-dot" style="background:var(--green)"></div>
+          <span class="dash-recent-title">${esc(t.title)}</span>
+          <span style="font-size:10px;color:var(--green);font-weight:500">✓ Terminé</span>
+        </div>`).join(''):'<div style="color:var(--text-muted);font-size:12px">Aucune tâche terminée aujourd'hui</div>'}
+    </div>`;
+
+  // ── Tâches non réalisées à reporter ──
+  const notDoneToday=open.filter(t=>t.due===todayStr());
+  const nextWD=nextWorkingDay(todayStr());
+  const nextWDStr=fmtFull(nextWD);
+  const notDoneTodayH=notDoneToday.length?`
+    <div class="dash-card full" style="border:1px solid var(--orange-bg)">
+      <div class="dash-card-title" style="color:var(--orange)">⏭ Non réalisées — Reporter au ${nextWDStr}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Ces tâches n'ont pas été terminées aujourd'hui. Reportez-les au prochain jour ouvré.</div>
+      ${notDoneToday.map(t=>`
+        <div class="dash-recent-task" data-tid="${t.id}" style="justify-content:space-between">
+          <div class="dash-notif-dot" style="background:${t.prio==='critique'?'var(--red)':t.prio==='haute'?'var(--orange)':'var(--accent)'}"></div>
+          <span class="dash-recent-title" style="cursor:pointer" onclick="selectTask('${t.id}')">${esc(t.title)}</span>
+          <button data-tid="${t.id}" onclick="postponeToNextWorkingDay(this.dataset.tid)"
+            style="background:var(--orange-bg);color:var(--orange);border:1px solid rgba(245,158,11,.3);border-radius:var(--radius);padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">
+            ⏭ Reporter
+          </button>
+        </div>`).join('')}
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button onclick="postponeAllToday()" style="background:var(--orange);color:#fff;border:none;border-radius:var(--radius);padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:500">
+          ⏭ Tout reporter au ${nextWDStr}
+        </button>
+      </div>
+    </div>`:'';
+
   // Category breakdown
   const catData=cats.map(c=>({name:c.name,icon:c.icon,count:open.filter(t=>t.cat===c.name).length})).filter(c=>c.count>0).sort((a,b)=>b.count-a.count).slice(0,7);
   const maxCat=catData.length?catData[0].count:1;
@@ -1029,7 +1105,6 @@ function renderDashboard(el){
     <span class="task-due ${daysLeft(t.due)<0?'overdue':''}" style="font-size:10px;flex-shrink:0">${fmtD(t.due)}</span>
   </div>`).join('');
 
-  // Recurring tasks count
   const recurCount=open.filter(t=>t.recur).length;
 
   el.innerHTML=`
@@ -1037,13 +1112,9 @@ function renderDashboard(el){
       <div class="main-header-top">
         <div><div class="main-title">Tableau de bord</div>
         <div class="main-subtitle">${new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div>
-        <div class="main-actions">
-          <button class="btn-icon" onclick="setView('ai',null)" style="color:var(--purple)" title="Agent IA">✦</button>
-        </div>
       </div>
     </div>
     <div class="dash-wrap">
-      <!-- KPI row -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px">
         <div class="metric-card" onclick="setView('overdue',null)" style="cursor:pointer"><div class="metric-val mv-red">${overdue.length}</div><div class="metric-lbl">En retard</div></div>
         <div class="metric-card" onclick="setView('myjour',null)" style="cursor:pointer"><div class="metric-val mv-orange">${today2.length}</div><div class="metric-lbl">Aujourd'hui</div></div>
@@ -1052,7 +1123,8 @@ function renderDashboard(el){
         <div class="metric-card"><div class="metric-val mv-purple">${recurCount}</div><div class="metric-lbl">Récurrentes</div></div>
       </div>
       <div class="dash-grid">
-        <!-- Ma journée summary -->
+        ${doneTodayH}
+        ${notDoneTodayH}
         <div class="dash-card">
           <div class="dash-card-title">☀️ Ma journée</div>
           <div class="dash-stat-grid">
@@ -1062,22 +1134,18 @@ function renderDashboard(el){
             <div class="dash-stat"><div class="dash-stat-val" style="color:var(--green)">${totalH.toFixed(1)}h</div><div class="dash-stat-lbl">Total ouvert</div></div>
           </div>
         </div>
-        <!-- Alertes -->
         <div class="dash-card">
           <div class="dash-card-title">🔔 Alertes récentes</div>
           ${recentNotifs}
         </div>
-        <!-- Répartition catégories -->
         <div class="dash-card">
           <div class="dash-card-title">🏷 Par catégorie</div>
           ${catBars||'<div style="color:var(--text-muted);font-size:12px">Aucune tâche ouverte</div>'}
         </div>
-        <!-- Répartition priorités -->
         <div class="dash-card">
           <div class="dash-card-title">🔥 Par priorité</div>
           ${prioBars}
         </div>
-        <!-- Top priorités -->
         <div class="dash-card full">
           <div class="dash-card-title">🎯 Top 5 priorités</div>
           ${topTasks||'<div style="color:var(--text-muted);font-size:12px">Aucune tâche ouverte</div>'}
@@ -1085,6 +1153,7 @@ function renderDashboard(el){
       </div>
     </div>`;
 }
+
 
 // ── PLANNING ──
 function renderPlanning(el){
@@ -1406,6 +1475,16 @@ function renderAIPage(el){
           <input class="ai-input" id="ai-inp" placeholder="Posez une question à votre assistant…" onkeydown="if(event.key==='Enter')sendAI()">
           <button class="ai-send" onclick="sendAI()">➤</button>
         </div>
+        <div id="claude-config-bar" style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;background:var(--surface2)">
+          <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">✦ Claude API</span>
+          <input id="claude-key-inp" type="password"
+            placeholder="Entrez votre clé API Anthropic (sk-ant-...)"
+            value="${APP_CONFIG.claudeApiKey}"
+            style="flex:1;padding:4px 8px;border:1px solid var(--border2);border-radius:var(--radius);font-size:11px;background:var(--bg);color:var(--text-primary);font-family:inherit;outline:none">
+          <button onclick="saveClaude()" style="background:var(--purple);color:#fff;border:none;border-radius:var(--radius);padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">
+            ${APP_CONFIG.useClaudeAI?'✓ Activé':'Activer'}
+          </button>
+        </div>
       </div>
     </div>`;
   setTimeout(()=>{const e=document.getElementById('ai-msgs-el');if(e)e.scrollTop=e.scrollHeight},50);
@@ -1436,48 +1515,140 @@ function initAI(){
   const rec=open.filter(t=>t.recur);
   aiMsgs=[{role:'ai',text:`Bonjour Sophie 👋<br><br>Vous avez <strong>${open.length} tâches ouvertes</strong> (${open.reduce((a,b)=>a+b.time,0).toFixed(1)}h).<br>☀️ Ma journée : <strong>${mj.length} tâche${mj.length!==1?'s':''}</strong> · ${mj.reduce((a,b)=>a+b.time,0).toFixed(1)}h<br>🔁 Tâches récurrentes : <strong>${rec.length}</strong><br>🔥 Top priorité : <strong>${sorted[0]?.title||'–'}</strong>${ov.length?`<br><br>⚠️ <strong>${ov.length} en retard</strong>`:''}`}];
 }
+function saveClaude(){
+  const key=document.getElementById('claude-key-inp')?.value.trim();
+  if(!key){APP_CONFIG.useClaudeAI=false;APP_CONFIG.claudeApiKey='';localStorage.removeItem('raf_claude_key');showToast('Claude IA désactivé');renderMain();return;}
+  APP_CONFIG.claudeApiKey=key;APP_CONFIG.useClaudeAI=true;
+  localStorage.setItem('raf_claude_key',key);
+  showToast('✦ Claude IA activé !');renderMain();
+}
+
 function sendAI(){const inp=document.getElementById('ai-inp');if(!inp)return;const msg=inp.value.trim();if(!msg)return;inp.value='';sendAIMsg(msg)}
 function sendAIMsg(msg){
   if(currentView!=='ai'){setView('ai',null);setTimeout(()=>sendAIMsg(msg),120);return}
-  aiMsgs.push({role:'user',text:msg});renderMain();
+  aiMsgs.push({role:'user',text:msg});
+  renderMain();
   setTimeout(()=>{document.getElementById('ai-msgs-el')?.scrollTo(0,999999)},30);
+
+  // ── CLAUDE API ──
+  if(APP_CONFIG.useClaudeAI && APP_CONFIG.claudeApiKey){
+    callClaudeAI(msg);
+    return;
+  }
+
+  // ── IA LOCALE (fallback) ──
   setTimeout(()=>{
-    const open=tasks.filter(t=>t.status!=='done');
-    const ov=open.filter(t=>daysLeft(t.due)<0);
-    const sorted=[...open].sort((a,b)=>calcScore(b)-calcScore(a));
-    const ml=msg.toLowerCase();let r='';
-    if(ml.includes('priorité')||ml.includes('prior')){
-      r=`🔥 <strong>Vos 5 priorités :</strong><br>${aiTaskCards(sorted.slice(0,5))}`;
-    } else if(ml.includes('retard')){
-      r=ov.length?`⚠️ <strong>${ov.length} en retard :</strong><br>${aiTaskCards(ov)}`:'✅ Aucune tâche en retard !';
-    } else if(ml.includes('3h')||ml.includes('3 h')||ml.includes('3 heure')){
-      const top=sorted.filter(t=>t.time<=1.5).slice(0,4);
-      r=`⏱ <strong>Avec 3h — ${top.reduce((a,b)=>a+b.time,0).toFixed(1)}h planifiées :</strong><br>${aiTaskCards(top)}`;
-    } else if(ml.includes('délégu')||ml.includes('delegu')){
-      const del=open.filter(t=>t.resp&&t.resp!=='Sophie Mercier').slice(0,4);
-      r=`👥 <strong>À déléguer :</strong><br>${del.length?aiTaskCards(del):'Pas de délégation évidente.'}`;
-    } else if(ml.includes('journée')||ml.includes('organise')||ml.includes('planif')){
-      const mj=open.filter(t=>t.myjour);
-      const notmj=sorted.filter(t=>!t.myjour).slice(0,4);
-      const slots=['08h30','09h30','10h30','11h30','13h30','15h00'];
-      const all=[...mj,...notmj].slice(0,6);
-      r=`☀️ <strong>Planning du jour (${all.reduce((a,b)=>a+b.time,0).toFixed(1)}h) :</strong><br><br>`;
-      r+=all.map((t,i)=>`<strong>${slots[i]||''}</strong> — ${t.title} (${t.time}h)`).join('<br>');
-      r+=`<br><br>Suggéré à ajouter à Ma journée :<br>${aiTaskCards(notmj.filter(t=>!t.myjour))}`;
-    } else if(ml.includes('semaine')){
-      const week=open.filter(t=>{const dl=daysLeft(t.due);return dl>=0&&dl<=7});
-      r=`📅 <strong>Cette semaine — ${week.length} tâches (${week.reduce((a,b)=>a+b.time,0).toFixed(1)}h) :</strong><br>${aiTaskCards(week.slice(0,7))}`;
-    } else if(ml.includes('récur')||ml.includes('recur')){
-      const rec=open.filter(t=>t.recur);
-      r=`🔁 <strong>Tâches récurrentes (${rec.length}) :</strong><br>${aiTaskCards(rec.slice(0,6))}`;
-    } else {
-      const mj=open.filter(t=>t.myjour);
-      r=`✦ <strong>Résumé :</strong><br><br>📋 ${open.length} tâches · ${open.reduce((a,b)=>a+b.time,0).toFixed(1)}h<br>☀️ Ma journée : ${mj.length}<br>🔁 Récurrentes : ${open.filter(t=>t.recur).length}<br>🔥 ${sorted[0]?.title||'–'}<br>${ov.length?`⚠️ ${ov.length} en retard`:'✅ Pas de retard'}<br><br><em>Commandes : priorités, retards, déléguer, journée, semaine, 3h, récurrentes</em>`;
-    }
-    aiMsgs.push({role:'ai',text:r});renderMain();
+    const r=localAIResponse(msg);
+    aiMsgs.push({role:'ai',text:r});
+    renderMain();
     setTimeout(()=>{document.getElementById('ai-msgs-el')?.scrollTo(0,999999)},50);
   },450);
 }
+
+async function callClaudeAI(msg){
+  const open=tasks.filter(t=>t.status!=='done');
+  const overdue=open.filter(t=>daysLeft(t.due)<0);
+  const sorted=[...open].sort((a,b)=>calcScore(b)-calcScore(a));
+  const mj=open.filter(t=>t.myjour);
+
+  const systemPrompt=`Tu es l'assistant IA de ${APP_CONFIG.userName}, Responsable Administratif et Financier.
+Tu analyses ses tâches et lui donnes des conseils de priorisation, organisation et délégation.
+Contexte actuel :
+- ${open.length} tâches ouvertes (${open.reduce((a,b)=>a+b.time,0).toFixed(1)}h estimées)
+- Ma journée : ${mj.length} tâches (${mj.reduce((a,b)=>a+b.time,0).toFixed(1)}h)
+- En retard : ${overdue.length} tâches
+- Top 3 priorités : ${sorted.slice(0,3).map(t=>t.title).join(', ')}
+- Tâches détaillées : ${JSON.stringify(open.slice(0,20).map(t=>({titre:t.title,priorité:t.prio,échéance:t.due,catégorie:t.cat,heures:t.time,statut:t.status})))}
+
+Réponds de façon concise, structurée et orientée action. Utilise des listes et des emojis pour la lisibilité.
+Quand tu cites une tâche spécifique, mets-la en gras.`;
+
+  try {
+    // Afficher "en cours de réflexion..."
+    aiMsgs.push({role:'ai',text:'<span style="color:var(--text-muted);font-style:italic">✦ Analyse en cours…</span>'});
+    renderMain();
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': APP_CONFIG.claudeApiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [
+          ...aiMsgs.slice(1,-1).filter(m=>m.role==='user'||m.role==='assistant').map(m=>({
+            role: m.role==='ai'?'assistant':'user',
+            content: m.text.replace(/<[^>]+>/g,'')
+          })),
+          {role:'user', content:msg}
+        ]
+      })
+    });
+
+    if(!response.ok){
+      const err=await response.json();
+      throw new Error(err.error?.message||'Erreur API Claude');
+    }
+
+    const data=await response.json();
+    const reply=data.content?.[0]?.text||'Pas de réponse';
+
+    // Replace "en cours" message with real response
+    aiMsgs[aiMsgs.length-1]={role:'ai',text:reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>')};
+    renderMain();
+    setTimeout(()=>{document.getElementById('ai-msgs-el')?.scrollTo(0,999999)},50);
+
+  } catch(e){
+    console.error('[Claude API]',e);
+    aiMsgs[aiMsgs.length-1]={role:'ai',text:`❌ Erreur Claude API : ${e.message}<br><br>Vérifiez votre clé API dans les paramètres.`};
+    // Fallback to local AI
+    const r=localAIResponse(msg);
+    aiMsgs.push({role:'ai',text:r});
+    renderMain();
+  }
+}
+
+function localAIResponse(msg){
+  const open=tasks.filter(t=>t.status!=='done');
+  const ov=open.filter(t=>daysLeft(t.due)<0);
+  const sorted=[...open].sort((a,b)=>calcScore(b)-calcScore(a));
+  const ml=msg.toLowerCase();let r='';
+  if(ml.includes('priorité')||ml.includes('prior')){
+    r=`🔥 <strong>Vos 5 priorités :</strong><br>${aiTaskCards(sorted.slice(0,5))}`;
+  } else if(ml.includes('retard')){
+    r=ov.length?`⚠️ <strong>${ov.length} en retard :</strong><br>${aiTaskCards(ov)}`:'✅ Aucune tâche en retard !';
+  } else if(ml.includes('3h')||ml.includes('3 h')||ml.includes('3 heure')){
+    const top=sorted.filter(t=>t.time<=1.5).slice(0,4);
+    r=`⏱ <strong>Avec 3h — ${top.reduce((a,b)=>a+b.time,0).toFixed(1)}h planifiées :</strong><br>${aiTaskCards(top)}`;
+  } else if(ml.includes('délégu')||ml.includes('delegu')){
+    const del=open.filter(t=>t.resp&&t.resp!==APP_CONFIG.userName).slice(0,4);
+    r=`👥 <strong>À déléguer :</strong><br>${del.length?aiTaskCards(del):'Pas de délégation évidente.'}`;
+  } else if(ml.includes('journée')||ml.includes('organise')||ml.includes('planif')){
+    const mj=open.filter(t=>t.myjour);
+    const notmj=sorted.filter(t=>!t.myjour).slice(0,4);
+    const slots=['08h30','09h30','10h30','11h30','13h30','15h00'];
+    const all=[...mj,...notmj].slice(0,6);
+    r=`☀️ <strong>Planning du jour (${all.reduce((a,b)=>a+b.time,0).toFixed(1)}h) :</strong><br><br>`;
+    r+=all.map((t,i)=>`<strong>${slots[i]||''}</strong> — ${t.title} (${t.time}h)`).join('<br>');
+    r+=`<br><br>Suggéré à ajouter à Ma journée :<br>${aiTaskCards(notmj.filter(t=>!t.myjour))}`;
+  } else if(ml.includes('semaine')){
+    const week=open.filter(t=>{const dl=daysLeft(t.due);return dl>=0&&dl<=7});
+    r=`📅 <strong>Cette semaine — ${week.length} tâches (${week.reduce((a,b)=>a+b.time,0).toFixed(1)}h) :</strong><br>${aiTaskCards(week.slice(0,7))}`;
+  } else if(ml.includes('récur')||ml.includes('recur')){
+    const rec=open.filter(t=>t.recur);
+    r=`🔁 <strong>Tâches récurrentes (${rec.length}) :</strong><br>${aiTaskCards(rec.slice(0,6))}`;
+  } else {
+    const mj=open.filter(t=>t.myjour);
+    r=`✦ <strong>Résumé :</strong><br><br>📋 ${open.length} tâches · ${open.reduce((a,b)=>a+b.time,0).toFixed(1)}h<br>☀️ Ma journée : ${mj.length}<br>🔁 Récurrentes : ${open.filter(t=>t.recur).length}<br>🔥 ${sorted[0]?.title||'–'}<br>${ov.length?`⚠️ ${ov.length} en retard`:'✅ Pas de retard'}<br><br><em>Commandes : priorités, retards, déléguer, journée, semaine, 3h, récurrentes</em>`;
+  }
+  return r;
+}
+
 
 // ── NAVIGATION ──
 function setView(v,el){
