@@ -1853,16 +1853,20 @@ function buildAddTaskBar(){
 
 function setNewTaskDue(date){
   if(!date)return;
-  // Bloquer weekend
   if(isWeekend(date)) date=nextWorkingDay(date);
   newTaskDue=date;
-  // Mettre à jour l'input date si visible
-  const inp=document.getElementById('new-due-inp');
-  if(inp) inp.value=date;
-  // Re-render juste les boutons (léger)
-  renderMain();
-  // Remettre le focus sur le champ titre
-  setTimeout(()=>{const t=document.getElementById('new-inp');if(t)t.focus();},50);
+  // Mettre à jour l'input date sans re-render (pour ne pas effacer le titre saisi)
+  const dueinp=document.getElementById('new-due-inp');
+  if(dueinp) dueinp.value=date;
+  // Mettre à jour visuellement uniquement les boutons date (sans toucher au champ titre)
+  document.querySelectorAll('.date-quick-btn').forEach(btn=>{
+    const onclick=btn.getAttribute('onclick')||'';
+    const m=onclick.match(/setNewTaskDue\('([^']+)'\)/);
+    if(m) btn.classList.toggle('selected', m[1]===date);
+  });
+  // Garder le focus sur le champ titre
+  const titreInp=document.getElementById('new-inp');
+  if(titreInp) titreInp.focus();
 }
 
 function addTask(){
