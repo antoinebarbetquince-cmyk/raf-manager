@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RAF Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RAF Manager">
+<meta name="theme-color" content="#141820">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -421,6 +433,10 @@ select option{background:#1C2130;color:#EDF0F7}
     <div id="notif-panel-wrap" style="display:none;position:absolute;top:36px;right:0;z-index:300"></div>
   </div>
   <button class="btn-icon" onclick="openTplModal()" title="Modèles de tâches" style="font-size:13px">📋</button>
+  <button class="btn-icon" id="pwa-install-btn" onclick="installPWA()" title="Installer l'application" style="display:none;color:var(--green);font-size:13px;gap:4px;padding:0 8px;width:auto">
+    📲 <span style="font-size:11px;font-weight:500">Installer</span>
+  </button>
+  <button class="btn-icon" onclick="requestNotifPermission()" title="Activer les notifications" style="font-size:14px">🔔</button>
   <div class="topbar-user">
     <div class="topbar-avatar" id="user-initials">R</div>
     <span class="topbar-name" id="user-name">RAF Manager</span>
@@ -1994,6 +2010,73 @@ document.addEventListener('keydown',e=>{
   if(n) n.textContent=APP_CONFIG.userName;
   if(i) i.textContent=APP_CONFIG.userInitials;
 })();
+
+// ── PWA : Service Worker + Install prompt ──
+let pwaInstallPrompt=null;
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js')
+      .then(reg=>{
+        console.log('[PWA] Service Worker enregistré');
+        // Vérifier les mises à jour
+        reg.addEventListener('updatefound',()=>{
+          const newWorker=reg.installing;
+          newWorker.addEventListener('statechange',()=>{
+            if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
+              showToast('🔄 Mise à jour disponible — rechargez la page');
+            }
+          });
+        });
+      })
+      .catch(err=>console.log('[PWA] SW erreur:',err));
+  });
+}
+
+// Capturer l'événement d'installation (Android Chrome)
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  pwaInstallPrompt=e;
+  // Afficher le bouton d'installation dans la topbar
+  const btn=document.getElementById('pwa-install-btn');
+  if(btn) btn.style.display='flex';
+});
+
+// Confirmation d'installation
+window.addEventListener('appinstalled',()=>{
+  pwaInstallPrompt=null;
+  const btn=document.getElementById('pwa-install-btn');
+  if(btn) btn.style.display='none';
+  showToast('✅ RAF Manager installé sur votre appareil !');
+});
+
+function installPWA(){
+  if(!pwaInstallPrompt)return;
+  pwaInstallPrompt.prompt();
+  pwaInstallPrompt.userChoice.then(result=>{
+    if(result.outcome==='accepted') showToast('✅ Installation en cours…');
+    pwaInstallPrompt=null;
+  });
+}
+
+// Demander permission notifications
+function requestNotifPermission(){
+  if(!('Notification' in window)){showToast('❌ Notifications non supportées');return;}
+  Notification.requestPermission().then(perm=>{
+    if(perm==='granted'){
+      showToast('🔔 Notifications activées !');
+      // Envoyer une notification de test
+      setTimeout(()=>{
+        new Notification('RAF Manager',{
+          body:'Les notifications sont activées ✓',
+          icon:'icons/icon-192.png'
+        });
+      },500);
+    } else {
+      showToast('❌ Notifications refusées');
+    }
+  });
+}
 
 // ── INIT ──
 initAI();
