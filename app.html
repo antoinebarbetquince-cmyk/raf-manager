@@ -857,7 +857,7 @@ function useTemplate(id){
 function deleteTpl(id){templates=templates.filter(t=>t.id!==id);saveTpls();renderTplList();}
 function saveAsTemplate(){
   if(!selectedId)return;
-  const t=tasks.find(x=>x.id===selectedId);if(!t)return;
+  const t=tasks.find(x=>String(x.id)===String(selectedId));if(!t)return;
   const tpl={id:'u'+Date.now(),title:t.title,cat:t.cat,prio:t.prio,time:t.time,recur:t.recur||'',comments:t.comments||''};
   templates.push(tpl);saveTpls();
   showToast(`💾 Modèle « ${t.title} » sauvegardé`);
@@ -890,8 +890,9 @@ function setPF(v){prioFilter=v;renderMain()}
 // ── TASK HTML ──
 function taskHTML(t){
   const s=calcScore(t);const ov=daysLeft(t.due)<0&&t.status!=='done';
-  return`<div class="task-item ${ov?'overdue-item':''} ${selectedId===t.id?'selected':''}" onclick="selectTask(${t.id})">
-    <div class="task-circle ${t.status==='done'?'done':t.prio==='critique'?'crit':''}" onclick="event.stopPropagation();toggleDone(${t.id})"></div>
+  const tid=JSON.stringify(String(t.id));
+  return`<div class="task-item ${ov?'overdue-item':''} ${selectedId===t.id?'selected':''}" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
+    <div class="task-circle ${t.status==='done'?'done':t.prio==='critique'?'crit':''}" data-tid="${t.id}" onclick="event.stopPropagation();toggleDone(this.dataset.tid)"></div>
     <div class="task-body">
       <div class="task-name ${t.status==='done'?'done':''}">${hl(t.title)}${t.myjour&&currentView!=='myjour'?'<span class="myjour-tag">☀️</span>':''}${t.recur?`<span class="chip chip-recur" style="margin-left:5px;font-size:9px">🔁 ${recurLbl(t.recur)}</span>`:''}</div>
       <div class="task-meta">
@@ -899,13 +900,13 @@ function taskHTML(t){
         <span class="chip chip-cat">${catIcon(t.cat)} ${t.cat}</span>
         ${dueHTML(t.due,t.status==='done')}
         ${t.time?`<span class="task-due">⏱ ${t.time}h</span>`:''}
-        ${t.resp&&t.resp!=='Sophie Mercier'?`<span class="task-due">👤 ${t.resp}</span>`:''}
+        ${t.resp?`<span class="task-due">👤 ${t.resp}</span>`:''}
       </div>
     </div>
     <div class="task-right">
       ${t.status!=='done'?`<div class="score-badge ${scCls(s)}">${s}</div>`:''}
-      <button class="mj-btn ${t.myjour?'mj-active':''}" onclick="event.stopPropagation();toggleMJ(${t.id})">${t.myjour?'☀️':'☀'}</button>
-      <button class="star-btn ${t.starred?'starred':''}" onclick="event.stopPropagation();toggleStar(${t.id})">★</button>
+      <button class="mj-btn ${t.myjour?'mj-active':''}" data-tid="${t.id}" onclick="event.stopPropagation();toggleMJ(this.dataset.tid)">${t.myjour?'☀️':'☀'}</button>
+      <button class="star-btn ${t.starred?'starred':''}" data-tid="${t.id}" onclick="event.stopPropagation();toggleStar(this.dataset.tid)">★</button>
     </div>
   </div>`;
 }
@@ -1018,7 +1019,7 @@ function renderDashboard(el){
   </div>`).join('') || '<div style="color:var(--text-muted);font-size:12px;padding:8px 0">Aucune alerte</div>';
 
   // Top tasks
-  const topTasks=sorted.slice(0,5).map(t=>`<div class="dash-recent-task" onclick="selectTask(${t.id})">
+  const topTasks=sorted.slice(0,5).map(t=>`<div class="dash-recent-task" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
     <div class="dash-notif-dot" style="background:${t.prio==='critique'?'var(--red)':t.prio==='haute'?'var(--orange)':'var(--accent)'}"></div>
     <span class="dash-recent-title">${t.title}</span>
     <span class="task-due ${daysLeft(t.due)<0?'overdue':''}" style="font-size:10px;flex-shrink:0">${fmtD(t.due)}</span>
@@ -1109,7 +1110,7 @@ function renderPlanning(el){
       draggable="true" data-id="${t.id}"
       ondragstart="planDragStart(event,${t.id})"
       ondragend="planDragEnd(event)"
-      onclick="selectTask(${t.id})"
+      data-tid="${t.id}" onclick="selectTask(this.dataset.tid)"
       title="${t.title} — glisser pour déplacer">
       <div class="plan-task-title">${t.title}</div>
       <div class="plan-task-meta">${catIcon(t.cat)} ${t.cat} · ${t.time}h${t.myjour?' ☀️':''}${t.recur?' 🔁':''}</div>
@@ -1151,8 +1152,8 @@ function planDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.c
 function planDragLeave(e){if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove('drag-over')}
 function planDrop(e,targetDate){
   e.preventDefault();e.currentTarget.classList.remove('drag-over');
-  const id=dragTaskId||parseInt(e.dataTransfer.getData('text/plain'));if(!id)return;
-  const t=tasks.find(x=>x.id===id);if(!t||t.due===targetDate)return;
+  const id=dragTaskId||e.dataTransfer.getData('text/plain');if(!id)return;
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t||t.due===targetDate)return;
   t.due=targetDate;
   if(targetDate===todayStr()&&!t.myjour)t.myjour=true;
   save(t);renderMain();updateCounts();
@@ -1175,9 +1176,9 @@ function renderPlanningJour(el){
 
   const unscheduledHTML=unscheduled.map(t=>`<div class="pj-unscheduled ${planCls[t.prio]||''}"
     draggable="true" data-id="${t.id}"
-    ondragstart="pjDragStart(event,${t.id},'unscheduled')"
+    data-tid="${t.id}" ondragstart="pjDragStart(event,this.dataset.tid,'unscheduled')"
     ondragend="pjDragEnd(event)"
-    onclick="selectTask(${t.id})">
+    onclick="selectTask(this.dataset.tid)">
     <div class="pj-us-title">${t.title}</div>
     <div class="pj-us-meta">${catIcon(t.cat)} ${t.cat} · ${t.time}h · ${prioLbl(t.prio)}</div>
   </div>`).join('');
@@ -1343,14 +1344,14 @@ function renderKanban(el){
     <div class="kanban-wrap"><div class="kanban-grid">${colsHTML}</div></div>`;
 }
 let kbDragId=null;
-function kbDragStart(e,id){kbDragId=id;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));setTimeout(()=>e.target.classList.add('dragging'),0)}
+function kbDragStart(e,id){kbDragId=String(id);e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));setTimeout(()=>e.target.classList.add('dragging'),0)}
 function kbDragEnd(e){e.target.classList.remove('dragging');document.querySelectorAll('.kb-body').forEach(c=>c.classList.remove('drag-over'));kbDragId=null}
 function kbDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('drag-over')}
 function kbDragLeave(e){if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove('drag-over')}
 function kbDrop(e,status){
   e.preventDefault();e.currentTarget.classList.remove('drag-over');
-  const id=kbDragId||parseInt(e.dataTransfer.getData('text/plain'));if(!id)return;
-  const t=tasks.find(x=>x.id===id);if(!t)return;
+  const id=kbDragId||e.dataTransfer.getData('text/plain');if(!id)return;
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
   const oldStatus=t.status;
   t.status=status;
   if(status==='done'&&t.recur)handleRecurrence(t);
@@ -1415,7 +1416,7 @@ function aiTaskCards(list){
   </div>`).join('');
 }
 function addToMJFromAI(id,btn){
-  const t=tasks.find(x=>x.id===id);if(!t)return;
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
   t.myjour=true;save();updateCounts();
   btn.className='ai-task-mj-btn on';btn.textContent='☀️ Ajouté';
   const el=document.getElementById('cnt-myjour');if(el)el.textContent=tasks.filter(t=>t.status!=='done'&&t.myjour).length;
@@ -1487,22 +1488,23 @@ function goAI(msg){setView('ai',null);setTimeout(()=>sendAIMsg(msg),100)}
 function onSearch(q){searchQuery=q;currentView=q?'search':'all';renderMain();updateCounts()}
 
 // ── TASK ACTIONS ──
-function toggleMJ(id){const t=tasks.find(x=>x.id===id);t.myjour=!t.myjour;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
-function addToMJ(id){const t=tasks.find(x=>x.id===id);t.myjour=true;save(t);renderMain();updateCounts()}
+function toggleMJ(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.myjour=!t.myjour;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
+function addToMJ(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.myjour=true;save(t);renderMain();updateCounts()}
 function toggleDone(id){
-  const t=tasks.find(x=>x.id===id);
+  const t=tasks.find(x=>String(x.id)===String(id));
+  if(!t)return;
   const wasDone=t.status==='done';
   t.status=wasDone?'todo':'done';
   if(!wasDone&&t.recur)handleRecurrence(t);
   save(t);renderMain();updateCounts();
   if(selectedId===id)openDetail(id);
 }
-function toggleStar(id){const t=tasks.find(x=>x.id===id);t.starred=!t.starred;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
+function toggleStar(id){const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;t.starred=!t.starred;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
 function deleteTask(){
   if(!selectedId)return;
   if(!confirm('Supprimer cette tâche ?'))return;
   if(APP_CONFIG.useSupabase) deleteTaskRemote(selectedId);
-  tasks=tasks.filter(x=>x.id!==selectedId);
+  tasks=tasks.filter(x=>String(x.id)!==String(selectedId));
   save();closeDetail();renderMain();updateCounts();
 }
 function addTask(){
@@ -1514,9 +1516,14 @@ function addTask(){
 }
 
 // ── DETAIL ──
-function selectTask(id){selectedId=id;renderMain();openDetail(id)}
+function selectTask(id){
+  // Normalise : cherche par string ET number
+  const t=tasks.find(x=>String(x.id)===String(id));
+  if(!t){console.warn('Task not found:',id);return;}
+  selectedId=t.id;renderMain();openDetail(t.id);
+}
 function openDetail(id){
-  const t=tasks.find(x=>x.id===id);if(!t)return;
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
   const dp=document.getElementById('detail-panel');dp.style.display='flex';
   document.getElementById('detail-title-inp').value=t.title;
   document.getElementById('detail-due').value=t.due;
@@ -1546,7 +1553,7 @@ function toggleDetailDone(){if(selectedId)toggleDone(selectedId)}
 function toggleDetailMJ(){if(selectedId)toggleMJ(selectedId)}
 function updateDetail(f,v){
   if(!selectedId)return;
-  const t=tasks.find(x=>x.id===selectedId);if(!t)return;
+  const t=tasks.find(x=>String(x.id)===String(selectedId));if(!t)return;
   if(f==='title'&&!String(v).trim())return;
   t[f]=v;save(t);renderMain();updateCounts();openDetail(selectedId);
 }
