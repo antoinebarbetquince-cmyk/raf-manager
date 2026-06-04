@@ -592,10 +592,10 @@ let notifPanelOpen=false;
 let scheduleSlots=JSON.parse(localStorage.getItem('raf_sched')||'{}');Object.keys(scheduleSlots).forEach(k=>{scheduleSlots[k]=scheduleSlots[k].map(Number)});
 function saveSchedule(){localStorage.setItem('raf_sched',JSON.stringify(scheduleSlots))}
 
-function save(){
+function save(changedTask){
   localStorage.setItem('raf_v5',JSON.stringify(tasks));
-  // Sync Supabase : appel différé pour ne pas bloquer l'UI
-  if(APP_CONFIG.useSupabase) tasks.forEach(t=>upsertTask(t));
+  // Sync Supabase : uniquement la tâche modifiée
+  if(APP_CONFIG.useSupabase && changedTask) upsertTask(changedTask);
 }
 
 // ── SUPABASE SYNC ──
@@ -639,13 +639,33 @@ async function syncAll(){
 async function upsertTask(t){
   const sb=getSupabase(); if(!sb) return;
   try {
-    await sb.from('tasks').upsert({
-      id: typeof t.id==='number'?undefined:t.id,
-      title: t.title, due_date: t.due, time_est: t.time,
-      category: t.cat, priority: t.prio, status: t.status,
-      responsible: t.resp, comments: t.comments,
-      starred: t.starred, myjour: t.myjour, recurrence: t.recur||''
-    });
+    const payload = {
+      title: t.title,
+      due_date: t.due||null,
+      time_est: parseFloat(t.time)||1,
+      category: t.cat||'Divers',
+      priority: t.prio||'moyenne',
+      status: t.status||'todo',
+      responsible: t.resp||'',
+      comments: t.comments||'',
+      starred: !!t.starred,
+      myjour: !!t.myjour,
+      recurrence: t.recur||''
+    };
+    // Si l'id est un UUID (string), on l'inclut pour faire un UPDATE
+    // Si c'est un number (local), on laisse Supabase générer un UUID
+    if(t.id && typeof t.id === 'string' && t.id.includes('-')) {
+      payload.id = t.id;
+    }
+    const {data, error} = await sb.from('tasks').upsert(payload).select();
+    if(error){ console.error('[Supabase] upsertTask error:', error); return; }
+    // Mettre à jour l'id local avec l'UUID Supabase
+    if(data && data[0] && typeof t.id === 'number'){
+      const idx = tasks.findIndex(x=>x.id===t.id);
+      if(idx>=0){ tasks[idx].id = data[0].id; }
+      localStorage.setItem('raf_v5', JSON.stringify(tasks));
+    }
+    console.log('[Supabase] Task saved:', payload.title);
   } catch(e){ console.error('[Supabase] upsertTask error:', e); }
 }
 
@@ -1135,7 +1155,7 @@ function planDrop(e,targetDate){
   const t=tasks.find(x=>x.id===id);if(!t||t.due===targetDate)return;
   t.due=targetDate;
   if(targetDate===todayStr()&&!t.myjour)t.myjour=true;
-  save();renderMain();updateCounts();
+  save(t);renderMain();updateCounts();
   showToast(`📅 Déplacé → ${fmtFull(targetDate)}`);
 }
 
@@ -1334,7 +1354,7 @@ function kbDrop(e,status){
   const oldStatus=t.status;
   t.status=status;
   if(status==='done'&&t.recur)handleRecurrence(t);
-  save();renderMain();updateCounts();
+  save(t);renderMain();updateCounts();
   if(selectedId===id)openDetail(id);
   showToast(`📌 ${t.title} → ${{todo:'À faire',inprogress:'En cours',done:'Terminé'}[status]}`);
 }
@@ -1467,17 +1487,17 @@ function goAI(msg){setView('ai',null);setTimeout(()=>sendAIMsg(msg),100)}
 function onSearch(q){searchQuery=q;currentView=q?'search':'all';renderMain();updateCounts()}
 
 // ── TASK ACTIONS ──
-function toggleMJ(id){const t=tasks.find(x=>x.id===id);t.myjour=!t.myjour;save();renderMain();updateCounts();if(selectedId===id)openDetail(id)}
-function addToMJ(id){const t=tasks.find(x=>x.id===id);t.myjour=true;save();renderMain();updateCounts()}
+function toggleMJ(id){const t=tasks.find(x=>x.id===id);t.myjour=!t.myjour;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
+function addToMJ(id){const t=tasks.find(x=>x.id===id);t.myjour=true;save(t);renderMain();updateCounts()}
 function toggleDone(id){
   const t=tasks.find(x=>x.id===id);
   const wasDone=t.status==='done';
   t.status=wasDone?'todo':'done';
   if(!wasDone&&t.recur)handleRecurrence(t);
-  save();renderMain();updateCounts();
+  save(t);renderMain();updateCounts();
   if(selectedId===id)openDetail(id);
 }
-function toggleStar(id){const t=tasks.find(x=>x.id===id);t.starred=!t.starred;save();renderMain();updateCounts();if(selectedId===id)openDetail(id)}
+function toggleStar(id){const t=tasks.find(x=>x.id===id);t.starred=!t.starred;save(t);renderMain();updateCounts();if(selectedId===id)openDetail(id)}
 function deleteTask(){
   if(!selectedId)return;
   if(!confirm('Supprimer cette tâche ?'))return;
@@ -1489,7 +1509,7 @@ function addTask(){
   const inp=document.getElementById('new-inp');if(!inp)return;
   const title=inp.value.trim();if(!title)return;
   const t={id:Date.now(),title,due:todayStr(),time:1,cat:cats[0]?.name||'Divers',prio:'moyenne',status:'todo',resp:APP_CONFIG.userName,comments:'',starred:false,myjour:currentView==='myjour',recur:''};
-  tasks.unshift(t);save();inp.value='';renderMain();updateCounts();
+  tasks.unshift(t);save(t);inp.value='';renderMain();updateCounts();
   setTimeout(()=>selectTask(t.id),50);
 }
 
@@ -1528,7 +1548,7 @@ function updateDetail(f,v){
   if(!selectedId)return;
   const t=tasks.find(x=>x.id===selectedId);if(!t)return;
   if(f==='title'&&!String(v).trim())return;
-  t[f]=v;save();renderMain();updateCounts();openDetail(selectedId);
+  t[f]=v;save(t);renderMain();updateCounts();openDetail(selectedId);
 }
 
 // ── COUNTS ──
