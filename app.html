@@ -385,6 +385,8 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;background:var(
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2)}
 input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) opacity(.4);cursor:pointer}
+/* Indication visuelle weekend interdit */
+input[type="date"].weekend-error{border-color:var(--red)!important;box-shadow:0 0 0 2px var(--red-bg)}
 select option{background:#1C2130;color:#EDF0F7}
 </style>
 </head>
@@ -481,7 +483,9 @@ select option{background:#1C2130;color:#EDF0F7}
     </div>
     <div class="detail-sec">
       <div class="detail-row"><span class="detail-row-icon">📅</span><span class="detail-row-lbl">Échéance</span>
-        <input type="date" class="detail-sel" id="detail-due" onchange="updateDetail('due',this.value)"></div>
+        <input type="date" class="detail-sel" id="detail-due"
+          onchange="updateDetail('due',this.value)"
+          title="Jours ouvrés uniquement (lun-ven)"></div>
       <div class="detail-row"><span class="detail-row-icon">🏷</span><span class="detail-row-lbl">Catégorie</span>
         <select class="detail-sel" id="detail-cat" onchange="updateDetail('cat',this.value)"></select></div>
       <div class="detail-row"><span class="detail-row-icon">🔥</span><span class="detail-row-lbl">Priorité</span>
@@ -556,6 +560,11 @@ const daysLeft=d=>{const dt=new Date(d+'T12:00');dt.setHours(0,0,0,0);return Mat
 const todayStr=()=>TODAY.toISOString().slice(0,10);
 const addDays=(d,n)=>{const dt=new Date(d+'T12:00');dt.setDate(dt.getDate()+n);return dt.toISOString().slice(0,10)};
 const addMonths=(d,n)=>{const dt=new Date(d+'T12:00');dt.setMonth(dt.getMonth()+n);return dt.toISOString().slice(0,10)};
+
+function isWeekend(dateStr){
+  const d=new Date(dateStr+'T12:00');
+  return d.getDay()===0||d.getDay()===6; // 0=dim, 6=sam
+}
 
 function nextWorkingDay(dateStr){
   const d=new Date(dateStr+'T12:00');
@@ -1240,6 +1249,11 @@ function planDrop(e,targetDate){
   const t=tasks.find(x=>String(x.id)===String(id));
   if(!t)return;
   if(t.due===targetDate){showToast('📅 Déjà sur ce jour');return;}
+  if(isWeekend(targetDate)){
+    const next=nextWorkingDay(targetDate);
+    showToast('⛔ Week-end — reporté au '+fmtFull(next));
+    targetDate=next;
+  }
   const oldDate=t.due;
   t.due=targetDate;
   if(targetDate===todayStr()&&!t.myjour)t.myjour=true;
@@ -1736,7 +1750,8 @@ function addTask(){
   // Si on est dans une vue catégorie, pré-remplir la catégorie
   const catFromView=currentView.startsWith('cat-')?currentView.slice(4):null;
   const defaultCat=catFromView||(cats[0]?.name||'Divers');
-  const t={id:Date.now(),title,due:todayStr(),time:1,cat:defaultCat,prio:'moyenne',status:'todo',resp:APP_CONFIG.userName,comments:'',starred:false,myjour:currentView==='myjour',recur:''};
+  const defaultDue=(()=>{const d=todayStr();return isWeekend(d)?nextWorkingDay(d):d;})();
+  const t={id:Date.now(),title,due:defaultDue,time:1,cat:defaultCat,prio:'moyenne',status:'todo',resp:APP_CONFIG.userName,comments:'',starred:false,myjour:currentView==='myjour',recur:''};
   tasks.unshift(t);
   inp.value='';
   renderMain();
@@ -1797,6 +1812,14 @@ function updateDetail(f,v){
     return;
   }
   if(f==='title'&&!String(v).trim())return;
+  // Bloquer les dates weekend
+  if(f==='due'&&v&&isWeekend(v)){
+    const next=nextWorkingDay(new Date(v+'T12:00').toISOString().slice(0,10));
+    showToast('⛔ Week-end non autorisé → reporté au '+fmtFull(next));
+    // Forcer la valeur au prochain jour ouvré
+    document.getElementById('detail-due').value=next;
+    v=next;
+  }
   t[f]=v;
   save(t);
   // Ne pas re-render si c'est juste une modification de champ texte (évite le clignotement)
