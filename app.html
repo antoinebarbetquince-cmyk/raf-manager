@@ -197,9 +197,9 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;background:var(
 .task-item.overdue-item.tc-6,.task-item.overdue-item.tc-7,.task-item.overdue-item.tc-8,
 .task-item.overdue-item.tc-9{border-left:3px solid var(--red)}
 /* ── PLANNING ── */
-.planning-wrap{flex:1;overflow:auto;padding:12px 22px 20px}
-.planning-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-width:700px}
-.plan-col{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;min-height:300px;display:flex;flex-direction:column}
+.planning-wrap{flex:1;overflow:auto;padding:12px 22px 20px;display:flex;flex-direction:column}
+.planning-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;flex:1;min-height:0}
+.plan-col{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;height:100%}
 .plan-col.today-col{border-color:var(--accent)}
 .plan-col-hdr{padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
 .plan-col.today-col .plan-col-hdr{background:rgba(79,142,247,.08)}
@@ -1152,10 +1152,13 @@ function renderDashboard(el){
 // ── PLANNING ──
 function renderPlanning(el){
   const days=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+  // Calcul du lundi de la semaine courante + offset
   const base=new Date(TODAY);
-  base.setDate(TODAY.getDate()+planOffset*7);
-  const dow0=(base.getDay()+6)%7;
-  const start=new Date(base);start.setDate(base.getDate()-dow0);
+  const dow0=(base.getDay()+6)%7; // 0=lundi
+  const mondayThisWeek=new Date(base);
+  mondayThisWeek.setDate(base.getDate()-dow0);
+  const start=new Date(mondayThisWeek);
+  start.setDate(mondayThisWeek.getDate()+planOffset*7);
   const endD=new Date(start);endD.setDate(start.getDate()+4);
   const startStr=start.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
   const endStr=endD.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
@@ -1734,7 +1737,7 @@ function openDetail(id){
   const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
   const dp=document.getElementById('detail-panel');dp.style.display='flex';
   document.getElementById('detail-title-inp').value=t.title;
-  document.getElementById('detail-due').value=t.due;
+  document.getElementById('detail-due').value=t.due||todayStr();
   document.getElementById('detail-cat').innerHTML=catOpts(t.cat);
   document.getElementById('detail-prio').value=t.prio;
   document.getElementById('detail-time').value=t.time;
