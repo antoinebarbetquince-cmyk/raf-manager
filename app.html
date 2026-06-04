@@ -1033,40 +1033,24 @@ function renderDashboard(el){
 
   // ── Tâches réalisées aujourd'hui ──
   const doneToday=tasks.filter(t=>t.status==='done'&&t.due===todayStr());
-  const doneTodayH=`
-    <div class="dash-card full" style="border:1px solid var(--green-bg)">
-      <div class="dash-card-title" style="color:var(--green)">✅ Réalisées aujourd'hui (${doneToday.length})</div>
-      ${doneToday.length?doneToday.map(t=>`
-        <div class="dash-recent-task" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
-          <div class="dash-notif-dot" style="background:var(--green)"></div>
-          <span class="dash-recent-title">${esc(t.title)}</span>
-          <span style="font-size:10px;color:var(--green);font-weight:500">✓ Terminé</span>
-        </div>`).join(''):'<div style="color:var(--text-muted);font-size:12px">Aucune tâche terminée aujourd'hui</div>'}
-    </div>`;
+  const doneTodayRows=doneToday.map(function(t){return '<div class="dash-recent-task" data-tid="'+t.id+'" onclick="selectTask(this.dataset.tid)"><div class="dash-notif-dot" style="background:var(--green)"></div><span class="dash-recent-title">'+esc(t.title)+'</span><span style="font-size:10px;color:var(--green);font-weight:500">&#10003; Terminé</span></div>';}).join('');
+  const doneTodayH='<div class="dash-card full" style="border:1px solid var(--green-bg)"><div class="dash-card-title" style="color:var(--green)">&#x2705; Réalisées aujourd\'hui ('+doneToday.length+')</div>'+(doneTodayRows||'<div style="color:var(--text-muted);font-size:12px">Aucune tâche terminée aujourd\'hui</div>')+'</div>';
 
   // ── Tâches non réalisées à reporter ──
   const notDoneToday=open.filter(t=>t.due===todayStr());
   const nextWD=nextWorkingDay(todayStr());
   const nextWDStr=fmtFull(nextWD);
-  const notDoneTodayH=notDoneToday.length?`
-    <div class="dash-card full" style="border:1px solid var(--orange-bg)">
-      <div class="dash-card-title" style="color:var(--orange)">⏭ Non réalisées — Reporter au ${nextWDStr}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Ces tâches n'ont pas été terminées aujourd'hui. Reportez-les au prochain jour ouvré.</div>
-      ${notDoneToday.map(t=>`
-        <div class="dash-recent-task" data-tid="${t.id}" style="justify-content:space-between">
-          <div class="dash-notif-dot" style="background:${t.prio==='critique'?'var(--red)':t.prio==='haute'?'var(--orange)':'var(--accent)'}"></div>
-          <span class="dash-recent-title" style="cursor:pointer" onclick="selectTask('${t.id}')">${esc(t.title)}</span>
-          <button data-tid="${t.id}" onclick="postponeToNextWorkingDay(this.dataset.tid)"
-            style="background:var(--orange-bg);color:var(--orange);border:1px solid rgba(245,158,11,.3);border-radius:var(--radius);padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">
-            ⏭ Reporter
-          </button>
-        </div>`).join('')}
-      <div style="margin-top:8px;display:flex;gap:8px">
-        <button onclick="postponeAllToday()" style="background:var(--orange);color:#fff;border:none;border-radius:var(--radius);padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:500">
-          ⏭ Tout reporter au ${nextWDStr}
-        </button>
-      </div>
-    </div>`:'';
+  let notDoneTodayH='';
+  if(notDoneToday.length){
+    const rows=notDoneToday.map(t=>{
+      const dot='<div class="dash-notif-dot" style="background:'+(t.prio==='critique'?'var(--red)':t.prio==='haute'?'var(--orange)':'var(--accent)')+'"></div>';
+      const title='<span class="dash-recent-title" style="cursor:pointer" onclick="selectTask(this.closest(\'[data-tid]\').dataset.tid)">'+esc(t.title)+'</span>';
+      const btn='<button data-tid="'+t.id+'" onclick="postponeToNextWorkingDay(this.dataset.tid)" style="background:var(--orange-bg);color:var(--orange);border:1px solid rgba(245,158,11,.3);border-radius:var(--radius);padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">⏭ Reporter</button>';
+      return '<div class="dash-recent-task" data-tid="'+t.id+'" style="justify-content:space-between">'+dot+title+btn+'</div>';
+    }).join('');
+    const reportAll='<button onclick="postponeAllToday()" style="background:var(--orange);color:#fff;border:none;border-radius:var(--radius);padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:500">⏭ Tout reporter au '+nextWDStr+'</button>';
+    notDoneTodayH='<div class="dash-card full" style="border:1px solid var(--orange-bg)"><div class="dash-card-title" style="color:var(--orange)">⏭ Non réalisées — Reporter au '+nextWDStr+'</div><div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Ces tâches n\'ont pas été terminées aujourd\'hui. Reportez-les au prochain jour ouvré.</div>'+rows+'<div style="margin-top:8px">'+reportAll+'</div></div>';
+  }
 
   // Category breakdown
   const catData=cats.map(c=>({name:c.name,icon:c.icon,count:open.filter(t=>t.cat===c.name).length})).filter(c=>c.count>0).sort((a,b)=>b.count-a.count).slice(0,7);
