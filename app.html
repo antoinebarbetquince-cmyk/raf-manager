@@ -557,7 +557,7 @@ const TODAY=new Date();TODAY.setHours(0,0,0,0);
 const fmtD=d=>{const dt=new Date(d+'T12:00');return dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})};
 const fmtFull=d=>{const dt=new Date(d+'T12:00');return dt.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})};
 const daysLeft=d=>{const dt=new Date(d+'T12:00');dt.setHours(0,0,0,0);return Math.round((dt-TODAY)/86400000)};
-const todayStr=()=>TODAY.toISOString().slice(0,10);
+const todayStr=()=>TODAY.getFullYear()+'-'+String(TODAY.getMonth()+1).padStart(2,'0')+'-'+String(TODAY.getDate()).padStart(2,'0');
 const addDays=(d,n)=>{const dt=new Date(d+'T12:00');dt.setDate(dt.getDate()+n);return dt.toISOString().slice(0,10)};
 const addMonths=(d,n)=>{const dt=new Date(d+'T12:00');dt.setMonth(dt.getMonth()+n);return dt.toISOString().slice(0,10)};
 
@@ -1173,13 +1173,15 @@ function renderDashboard(el){
 // ── PLANNING ──
 function renderPlanning(el){
   const days=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
-  // Calcul du lundi de la semaine courante + offset
+  // Calcul du lundi de la semaine courante + offset (en heure locale)
   const base=new Date(TODAY);
-  const dow0=(base.getDay()+6)%7; // 0=lundi
+  const dow0=(base.getDay()+6)%7; // 0=lundi, 1=mardi... (getDay: 0=dim)
   const mondayThisWeek=new Date(base);
   mondayThisWeek.setDate(base.getDate()-dow0);
+  mondayThisWeek.setHours(12,0,0,0); // Midi local pour éviter tout décalage DST
   const start=new Date(mondayThisWeek);
   start.setDate(mondayThisWeek.getDate()+planOffset*7);
+  start.setHours(12,0,0,0);
   const endD=new Date(start);endD.setDate(start.getDate()+4);
   const startStr=start.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
   const endStr=endD.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
@@ -1187,7 +1189,8 @@ function renderPlanning(el){
   let cols='';
   for(let i=0;i<5;i++){
     const d=new Date(start);d.setDate(start.getDate()+i);
-    const ds=d.toISOString().slice(0,10);
+    // Utiliser la date locale (pas UTC) pour éviter le décalage de fuseau horaire
+    const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     const isToday=ds===todayStr();
     const dow2=days[(d.getDay()+6)%7];
     const dayTasks=[
