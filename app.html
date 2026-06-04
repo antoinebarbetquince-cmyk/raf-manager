@@ -711,8 +711,20 @@ async function upsertTask(t){
     if(error){ console.error('[Supabase] upsertTask error:', error); return; }
     // Mettre à jour l'id local avec l'UUID Supabase
     if(data && data[0] && typeof t.id === 'number'){
-      const idx = tasks.findIndex(x=>x.id===t.id);
-      if(idx>=0){ tasks[idx].id = data[0].id; }
+      const oldId = t.id;
+      const newId = data[0].id;
+      const idx = tasks.findIndex(x=>x.id===oldId);
+      if(idx>=0){
+        tasks[idx].id = newId;
+        // Mettre à jour selectedId si c'était cette tâche
+        if(String(selectedId)===String(oldId)){
+          selectedId = newId;
+        }
+        // Mettre à jour scheduleSlots si cette tâche était planifiée
+        Object.keys(scheduleSlots).forEach(h=>{
+          scheduleSlots[h]=scheduleSlots[h].map(x=>String(x)===String(oldId)?newId:x);
+        });
+      }
       localStorage.setItem('raf_v5', JSON.stringify(tasks));
     }
     console.log('[Supabase] Task saved:', payload.title);
@@ -1222,12 +1234,19 @@ function planDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.c
 function planDragLeave(e){if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove('drag-over')}
 function planDrop(e,targetDate){
   e.preventDefault();e.currentTarget.classList.remove('drag-over');
-  const id=dragTaskId||e.dataTransfer.getData('text/plain');if(!id)return;
-  const t=tasks.find(x=>String(x.id)===String(id));if(!t||t.due===targetDate)return;
+  // Priorité : drag depuis le planning (dragTaskId), sinon dataTransfer
+  const id=dragTaskId||e.dataTransfer.getData('text/plain');
+  if(!id)return;
+  const t=tasks.find(x=>String(x.id)===String(id));
+  if(!t)return;
+  if(t.due===targetDate){showToast('📅 Déjà sur ce jour');return;}
+  const oldDate=t.due;
   t.due=targetDate;
   if(targetDate===todayStr()&&!t.myjour)t.myjour=true;
   save(t);renderMain();updateCounts();
-  showToast(`📅 Déplacé → ${fmtFull(targetDate)}`);
+  showToast('📅 '+esc(t.title)+' → '+fmtFull(targetDate));
+  // Si le détail est ouvert sur cette tâche, rafraîchir
+  if(String(selectedId)===String(t.id))openDetail(t.id);
 }
 
 
@@ -1718,8 +1737,15 @@ function addTask(){
   const catFromView=currentView.startsWith('cat-')?currentView.slice(4):null;
   const defaultCat=catFromView||(cats[0]?.name||'Divers');
   const t={id:Date.now(),title,due:todayStr(),time:1,cat:defaultCat,prio:'moyenne',status:'todo',resp:APP_CONFIG.userName,comments:'',starred:false,myjour:currentView==='myjour',recur:''};
-  tasks.unshift(t);save(t);inp.value='';renderMain();updateCounts();
-  setTimeout(()=>selectTask(t.id),50);
+  tasks.unshift(t);
+  inp.value='';
+  renderMain();
+  updateCounts();
+  // Ouvrir le détail immédiatement avec l'id local
+  // Il sera mis à jour vers UUID Supabase dans upsertTask
+  selectTask(t.id);
+  // Sauvegarder après avoir ouvert le détail
+  save(t);
 }
 
 // ── DETAIL ──
@@ -1764,9 +1790,24 @@ function toggleDetailDone(){if(selectedId)toggleDone(selectedId)}
 function toggleDetailMJ(){if(selectedId)toggleMJ(selectedId)}
 function updateDetail(f,v){
   if(!selectedId)return;
-  const t=tasks.find(x=>String(x.id)===String(selectedId));if(!t)return;
+  let t=tasks.find(x=>String(x.id)===String(selectedId));
+  if(!t){
+    // Fallback : chercher par correspondance approximative (titre) si id changé
+    console.warn('[updateDetail] task not found for id:',selectedId);
+    return;
+  }
   if(f==='title'&&!String(v).trim())return;
-  t[f]=v;save(t);renderMain();updateCounts();openDetail(selectedId);
+  t[f]=v;
+  save(t);
+  // Ne pas re-render si c'est juste une modification de champ texte (évite le clignotement)
+  if(f==='title'||f==='comments'){
+    updateCounts();
+    // Mise à jour légère : juste le nom dans la liste
+    const taskEl=document.querySelector('[data-tid="'+String(t.id)+'"] .task-name');
+    if(taskEl) taskEl.innerHTML=hl(t.title);
+  } else {
+    renderMain();updateCounts();openDetail(selectedId);
+  }
 }
 
 // ── COUNTS ──
