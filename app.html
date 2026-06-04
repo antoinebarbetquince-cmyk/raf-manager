@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RAF Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --accent:#4F8EF7;--accent-dim:#3A6FD4;--accent-glow:rgba(79,142,247,.18);
@@ -591,32 +592,74 @@ let notifPanelOpen=false;
 let scheduleSlots=JSON.parse(localStorage.getItem('raf_sched')||'{}');Object.keys(scheduleSlots).forEach(k=>{scheduleSlots[k]=scheduleSlots[k].map(Number)});
 function saveSchedule(){localStorage.setItem('raf_sched',JSON.stringify(scheduleSlots))}
 
-function save(){localStorage.setItem('raf_v5',JSON.stringify(tasks));}
+function save(){
+  localStorage.setItem('raf_v5',JSON.stringify(tasks));
+  // Sync Supabase : appel différé pour ne pas bloquer l'UI
+  if(APP_CONFIG.useSupabase) tasks.forEach(t=>upsertTask(t));
+}
 
 // ── SUPABASE SYNC ──
-// 1. Ajoutez dans <head> : <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-// 2. Renseignez APP_CONFIG.supabaseUrl + supabaseKey
-// 3. Passez APP_CONFIG.useSupabase = true
-//
-// let _sb = null;
-// function getSupabase(){
-//   if(!_sb && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseKey)
-//     _sb = supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseKey);
-//   return _sb;
-// }
-// async function syncTasks(){
-//   const sb=getSupabase(); if(!sb) return;
-//   const {data} = await sb.from('tasks').select('*').order('created_at');
-//   if(data){ tasks=data; renderMain(); updateCounts(); }
-// }
-// async function upsertTask(t){
-//   const sb=getSupabase(); if(!sb) return;
-//   await sb.from('tasks').upsert(t);
-// }
-// async function deleteTaskRemote(id){
-//   const sb=getSupabase(); if(!sb) return;
-//   await sb.from('tasks').delete().eq('id',id);
-// }
+let _sb = null;
+function getSupabase(){
+  if(!_sb && APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseKey)
+    _sb = supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseKey);
+  return _sb;
+}
+
+async function syncAll(){
+  const sb = getSupabase(); if(!sb) return;
+  try {
+    // Tâches
+    const {data:tdata, error:te} = await sb.from('tasks').select('*').order('created_at',{ascending:false});
+    if(te) throw te;
+    if(tdata) {
+      tasks = tdata.map(t=>({
+        id: t.id, title: t.title, due: t.due_date||todayStr(),
+        time: parseFloat(t.time_est)||1, cat: t.category||'Divers',
+        prio: t.priority||'moyenne', status: t.status||'todo',
+        resp: t.responsible||'', comments: t.comments||'',
+        starred: t.starred||false, myjour: t.myjour||false,
+        recur: t.recurrence||''
+      }));
+    }
+    // Catégories
+    const {data:cdata} = await sb.from('categories').select('*').order('position');
+    if(cdata && cdata.length) cats = cdata.map(c=>({name:c.name, icon:c.icon}));
+    // Modèles
+    const {data:tpldata} = await sb.from('templates').select('*').order('created_at');
+    if(tpldata) templates = tpldata.map(t=>({id:t.id,title:t.title,cat:t.category,prio:t.priority,time:t.time_est,recur:t.recurrence||'',comments:t.comments||''}));
+    // Notifications
+    const {data:ndata} = await sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(30);
+    if(ndata) notifications = ndata.map(n=>({id:n.id,icon:n.icon,title:n.title,sub:n.sub,type:n.type,read:n.read,time:new Date(n.created_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}));
+    renderMain(); updateCounts(); renderSidebarCats();
+    console.log('[Supabase] Sync OK —', tasks.length, 'tâches');
+  } catch(e){ console.error('[Supabase] Sync error:', e); }
+}
+
+async function upsertTask(t){
+  const sb=getSupabase(); if(!sb) return;
+  try {
+    await sb.from('tasks').upsert({
+      id: typeof t.id==='number'?undefined:t.id,
+      title: t.title, due_date: t.due, time_est: t.time,
+      category: t.cat, priority: t.prio, status: t.status,
+      responsible: t.resp, comments: t.comments,
+      starred: t.starred, myjour: t.myjour, recurrence: t.recur||''
+    });
+  } catch(e){ console.error('[Supabase] upsertTask error:', e); }
+}
+
+async function deleteTaskRemote(id){
+  const sb=getSupabase(); if(!sb) return;
+  try { await sb.from('tasks').delete().eq('id',id); }
+  catch(e){ console.error('[Supabase] deleteTask error:', e); }
+}
+
+async function upsertNotif(n){
+  const sb=getSupabase(); if(!sb) return;
+  try { await sb.from('notifications').insert({icon:n.icon,title:n.title,sub:n.sub,type:n.type}); }
+  catch(e){}
+}
 
 
 function saveCats(){localStorage.setItem('raf_cats',JSON.stringify(cats))}
@@ -665,6 +708,7 @@ function handleRecurrence(task){
 
 // ── NOTIFICATIONS ──
 function addNotif(icon,title,sub,type='info'){
+  if(APP_CONFIG.useSupabase) upsertNotif({icon,title,sub,type});
   notifications.unshift({id:Date.now(),icon,title,sub,type,read:false,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})});
   if(notifications.length>30)notifications=notifications.slice(0,30);
   saveNotifs();
@@ -1437,6 +1481,7 @@ function toggleStar(id){const t=tasks.find(x=>x.id===id);t.starred=!t.starred;sa
 function deleteTask(){
   if(!selectedId)return;
   if(!confirm('Supprimer cette tâche ?'))return;
+  if(APP_CONFIG.useSupabase) deleteTaskRemote(selectedId);
   tasks=tasks.filter(x=>x.id!==selectedId);
   save();closeDetail();renderMain();updateCounts();
 }
@@ -1528,10 +1573,14 @@ document.addEventListener('keydown',e=>{
 
 // ── INIT ──
 initAI();
-checkAlerts();
-renderSidebarCats();
-renderMain();
-updateCounts();
+if(APP_CONFIG.useSupabase){
+  syncAll().then(()=>{ checkAlerts(); });
+} else {
+  checkAlerts();
+  renderSidebarCats();
+  renderMain();
+  updateCounts();
+}
 </script>
 </body>
 </html>
