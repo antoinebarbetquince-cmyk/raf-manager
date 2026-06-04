@@ -1108,7 +1108,7 @@ function renderPlanning(el){
     const cards=dayTasks.map(t=>`<div
       class="plan-task ${planCls[t.prio]||''} ${t.status==='done'?'done-t':''}"
       draggable="true" data-id="${t.id}"
-      ondragstart="planDragStart(event,${t.id})"
+      data-tid="${t.id}" ondragstart="planDragStart(event,this.dataset.tid)"
       ondragend="planDragEnd(event)"
       data-tid="${t.id}" onclick="selectTask(this.dataset.tid)"
       title="${t.title} — glisser pour déplacer">
@@ -1146,7 +1146,7 @@ function renderPlanning(el){
     </div>
     <div class="planning-wrap"><div class="planning-grid">${cols}</div></div>`;
 }
-function planDragStart(e,id){dragTaskId=id;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));setTimeout(()=>e.target.classList.add('dragging'),0)}
+function planDragStart(e,id){dragTaskId=String(id);e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));setTimeout(()=>e.target.classList.add('dragging'),0)}
 function planDragEnd(e){e.target.classList.remove('dragging');document.querySelectorAll('.plan-col-body').forEach(c=>c.classList.remove('drag-over'));dragTaskId=null}
 function planDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('drag-over')}
 function planDragLeave(e){if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove('drag-over')}
@@ -1187,12 +1187,12 @@ function renderPlanningJour(el){
     const slotTasks=(scheduleSlots[h]||[]).map(id=>tasks.find(x=>x.id===id)).filter(Boolean);
     const placedCards=slotTasks.map(t=>`<div class="pj-placed-task ${planCls[t.prio]||''} ${t.id===selectedId?'selected':''}"
       draggable="true" data-id="${t.id}"
-      ondragstart="pjDragStart(event,${t.id},'slot',${h})"
+      data-tid="${t.id}" ondragstart="pjDragStart(event,this.dataset.tid,'slot',${h})"
       ondragend="pjDragEnd(event)"
-      onclick="event.stopPropagation();selectTask(${t.id})">
+      onclick="event.stopPropagation();selectTask(this.closest('[data-tid]').dataset.tid)">
       <div class="pj-placed-title">${t.title}</div>
       <div class="pj-placed-meta"><span>${catIcon(t.cat)}</span><span>${t.time}h</span><span class="${'chip '+chipCls(t.prio).split(' ')[1]}" style="font-size:9px;padding:1px 5px">${prioLbl(t.prio)}</span></div>
-      <button class="pj-remove-btn" onclick="event.stopPropagation();pjRemove(${t.id},${h})" title="Retirer">✕</button>
+      <button class="pj-remove-btn" data-tid="${t.id}" data-hour="${h}" onclick="event.stopPropagation();pjRemove(this.dataset.tid,this.dataset.hour)" title="Retirer">✕</button>
     </div>`).join('');
 
     const showNow=h===nowH;
@@ -1239,7 +1239,7 @@ function renderPlanningJour(el){
 
 let pjDragData={id:null,fromSlot:null};
 function pjDragStart(e,id,origin,fromSlot){
-  pjDragData={id,fromSlot:origin==='slot'?fromSlot:null};
+  pjDragData={id:String(id),fromSlot:origin==='slot'?parseInt(fromSlot):null};
   e.dataTransfer.effectAllowed='move';
   e.dataTransfer.setData('text/plain',String(id));
   setTimeout(()=>e.target.classList.add('dragging'),0);
@@ -1253,7 +1253,7 @@ function pjDrop(e,hour){
   const t=tasks.find(x=>x.id===id);if(!t)return;
   // remove from previous slot if any
   if(pjDragData.fromSlot!==null){
-    scheduleSlots[pjDragData.fromSlot]=(scheduleSlots[pjDragData.fromSlot]||[]).filter(x=>x!==id);
+    scheduleSlots[pjDragData.fromSlot]=(scheduleSlots[pjDragData.fromSlot]||[]).filter(x=>String(x)!==String(id));
   }
   if(!scheduleSlots[hour])scheduleSlots[hour]=[];
   if(!scheduleSlots[hour].includes(id))scheduleSlots[hour].push(id);
@@ -1262,7 +1262,8 @@ function pjDrop(e,hour){
   renderMain();
 }
 function pjRemove(id,hour){
-  scheduleSlots[hour]=(scheduleSlots[hour]||[]).filter(x=>x!==id);
+  hour=parseInt(hour);
+  scheduleSlots[hour]=(scheduleSlots[hour]||[]).filter(x=>String(x)!==String(id));
   saveSchedule();renderMain();
 }
 function clearSchedule(){
@@ -1277,7 +1278,7 @@ function autoSchedule(){
     if(currentH>19)return;
     if(currentH===12)currentH=13;// skip lunch
     if(!scheduleSlots[currentH])scheduleSlots[currentH]=[];
-    scheduleSlots[currentH].push(t.id);
+    scheduleSlots[currentH].push(String(t.id));
     currentH+=Math.ceil(t.time);
     if(currentH===12)currentH=13;
   });
@@ -1298,15 +1299,15 @@ function renderKanban(el){
       const dl=daysLeft(t.due);const ov=dl<0&&t.status!=='done';
       return`<div class="kb-card ${t.id===selectedId?'selected':''}"
         draggable="true" data-id="${t.id}" data-status="${t.status}"
-        ondragstart="kbDragStart(event,${t.id})"
+        data-tid="${t.id}" ondragstart="kbDragStart(event,this.dataset.tid)"
         ondragend="kbDragEnd(event)"
-        onclick="selectTask(${t.id})">
+        onclick="selectTask(this.dataset.tid)">
         <div class="kb-card-title">${t.title}${t.recur?` <span style="font-size:9px;color:var(--purple)">🔁</span>`:''}</div>
         <div class="kb-card-meta">
           <span class="${chipCls(t.prio)}">${prioLbl(t.prio)}</span>
           <span class="chip chip-cat">${catIcon(t.cat)} ${t.cat}</span>
           ${t.time?`<span class="task-due">⏱ ${t.time}h</span>`:''}
-          <button class="mj-btn ${t.myjour?'mj-active':''}" style="margin-left:auto" onclick="event.stopPropagation();toggleMJ(${t.id})">${t.myjour?'☀️':'☀'}</button>
+          <button class="mj-btn ${t.myjour?'mj-active':''}" style="margin-left:auto" data-tid="${t.id}" onclick="event.stopPropagation();toggleMJ(this.dataset.tid)">${t.myjour?'☀️':'☀'}</button>
         </div>
         <div class="kb-card-due ${ov?'overdue':dl<=1?'soon':''}">${daysLeft(t.due)<0?`⚠ Retard ${Math.abs(daysLeft(t.due))}j`:dl===0?'📅 Aujourd\'hui':dl===1?'📅 Demain':fmtD(t.due)}</div>
       </div>`;}).join('');
@@ -1370,13 +1371,13 @@ function renderAIPage(el){
     <div class="ai-suggest-task-title">${t.title}</div>
     <div class="ai-suggest-meta"><span class="${chipCls(t.prio)}">${prioLbl(t.prio)}</span><span class="chip chip-cat">${catIcon(t.cat)} ${t.cat}</span>${dueHTML(t.due,false)}</div>
     <div class="ai-suggest-actions">
-      <button class="ai-sug-btn primary" onclick="addToMJ(${t.id})">☀️ Ma journée</button>
-      <button class="ai-sug-btn" onclick="selectTask(${t.id})">Voir</button>
+      <button class="ai-sug-btn primary" data-tid="${t.id}" onclick="addToMJ(this.dataset.tid)">☀️ Ma journée</button>
+      <button class="ai-sug-btn" onclick="selectTask(this.dataset.tid)">Voir</button>
     </div>
   </div>`).join('');
   const mjSummary=inMJ.length?`<div style="margin-bottom:12px;padding:10px;background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.2);border-radius:var(--radius-lg)">
     <div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">☀️ Ma journée — ${inMJ.length} tâches · ${inMJ.reduce((a,b)=>a+b.time,0).toFixed(1)}h</div>
-    ${inMJ.map(t=>`<div style="font-size:12px;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px"><span>${t.title}</span><span style="color:var(--text-muted);font-size:11px">${t.time}h</span><button onclick="toggleMJ(${t.id})" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px" title="Retirer">✕</button></div>`).join('')}
+    ${inMJ.map(t=>`<div style="font-size:12px;color:var(--text-secondary);padding:2px 0;display:flex;align-items:center;gap:6px"><span>${t.title}</span><span style="color:var(--text-muted);font-size:11px">${t.time}h</span><button data-tid="${t.id}" onclick="toggleMJ(this.dataset.tid)" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px" title="Retirer">✕</button></div>`).join('')}
   </div>`:`<div style="margin-bottom:12px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-lg);text-align:center;color:var(--text-muted);font-size:12px">Ajoutez des tâches depuis les suggestions →</div>`;
   const msgsHTML=aiMsgs.map(m=>`<div class="ai-msg ai-msg-${m.role}">${m.text}</div>`).join('');
   el.innerHTML=`
@@ -1412,7 +1413,7 @@ function aiTaskCards(list){
       <div class="ai-task-card-title">${t.title}${t.recur?` <span style="font-size:9px;color:var(--purple)">🔁</span>`:''}</div>
       <div class="ai-task-card-meta">${prioLbl(t.prio)} · ${fmtD(t.due)} · ${t.time}h · ${catIcon(t.cat)} ${t.cat}</div>
     </div>
-    <button class="ai-task-mj-btn ${t.myjour?'on':''}" onclick="addToMJFromAI(${t.id},this)">${t.myjour?'☀️ Ajouté':'☀ Journée'}</button>
+    <button class="ai-task-mj-btn ${t.myjour?'on':''}" data-tid="${t.id}" onclick="addToMJFromAI(this.dataset.tid,this)">${t.myjour?'☀️ Ajouté':'☀ Journée'}</button>
   </div>`).join('');
 }
 function addToMJFromAI(id,btn){
