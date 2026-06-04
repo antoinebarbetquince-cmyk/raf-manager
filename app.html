@@ -1675,9 +1675,13 @@ function addTask(){
 
 // ── DETAIL ──
 function selectTask(id){
-  // Normalise : cherche par string ET number
   const t=tasks.find(x=>String(x.id)===String(id));
   if(!t){console.warn('Task not found:',id);return;}
+  // Double-clic = ferme le panneau détail
+  if(String(selectedId)===String(t.id)){
+    closeDetail();
+    return;
+  }
   selectedId=t.id;renderMain();openDetail(t.id);
 }
 function openDetail(id){
