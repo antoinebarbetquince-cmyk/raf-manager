@@ -59,10 +59,11 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;background:var(
 .sidebar-group{display:flex;align-items:center;font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;padding:10px 14px 4px;gap:6px}
 .sidebar-group-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:0 2px;border-radius:3px;line-height:1;transition:color .1s}
 .sidebar-group-btn:hover{color:var(--accent)}
-.sidebar-cat-item{display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;transition:background .1s;position:relative;margin:1px 6px;border-radius:var(--radius)}
+.sidebar-cat-item{display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;transition:background .1s,border-color .1s;position:relative;margin:1px 6px;border-radius:var(--radius);border:1.5px solid transparent}
 .sidebar-cat-item:hover{background:rgba(255,255,255,.05)}
 .sidebar-cat-item.active{background:var(--sidebar-active)}
 .sidebar-cat-item.active::before{content:'';position:absolute;left:-6px;top:4px;bottom:4px;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
+.sidebar-cat-item.cat-drag-over{border-color:var(--accent);background:var(--sidebar-active)}
 .cat-actions{display:none;gap:2px;margin-left:auto}
 .sidebar-cat-item:hover .cat-actions{display:flex}
 .cat-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;padding:2px 4px;border-radius:3px;transition:color .1s}
@@ -829,9 +830,14 @@ function renderSidebarCats(){
   const el=document.getElementById('cat-sidebar-list');if(!el)return;
   const open=t=>t.status!=='done';
   el.innerHTML=cats.map(c=>`
-    <div class="sidebar-cat-item ${currentView===('cat-'+c.name)?'active':''}" onclick="setView('cat-'+this.dataset.cat,this)" data-cat="${c.name}">
+    <div class="sidebar-cat-item ${currentView===('cat-'+c.name)?'active':''}"
+      onclick="setView('cat-'+this.dataset.cat,this)"
+      data-cat="${c.name}"
+      ondragover="catDragOver(event)"
+      ondragleave="catDragLeave(event)"
+      ondrop="catDrop(event,this.dataset.cat)">
       <span class="sidebar-icon">${c.icon}</span>
-      <span class="sidebar-label" style="flex:1;font-size:13px;color:${currentView==='cat-'+c.name?'var(--text-primary)':'var(--text-secondary)'}">${c.name}</span>
+      <span class="sidebar-label" style="flex:1;font-size:13px;color:${currentView===('cat-'+c.name)?'var(--text-primary)':'var(--text-secondary)'}">${c.name}</span>
       <span class="sidebar-count">${tasks.filter(t=>open(t)&&t.cat===c.name).length}</span>
       <div class="cat-actions"><button class="cat-btn" data-catname="${c.name.replace(/'/g,'&apos;')}" onclick="event.stopPropagation();openCatModal(this.dataset.catname)" title="Modifier">✏️</button></div>
     </div>`).join('');
@@ -947,7 +953,7 @@ function taskHTML(t){
   const s=calcScore(t);const ov=daysLeft(t.due)<0&&t.status!=='done';
   const tid=JSON.stringify(String(t.id));
   const dueTag=dueHTML(t.due,t.status==='done');
-  return`<div class="task-item ${ov?'overdue-item':''} ${String(selectedId)===String(t.id)?'selected':''} ${catColorClass(t.cat)}" data-tid="${t.id}" onclick="selectTask(this.dataset.tid)">
+  return`<div class="task-item ${ov?'overdue-item':''} ${String(selectedId)===String(t.id)?'selected':''} ${catColorClass(t.cat)}" data-tid="${t.id}" draggable="true" ondragstart="taskDragStart(event,this.dataset.tid)" ondragend="taskDragEnd(event)" onclick="selectTask(this.dataset.tid)">
     <div class="task-circle ${t.status==='done'?'done':t.prio==='critique'?'crit':''}" data-tid="${t.id}" onclick="event.stopPropagation();toggleDone(this.dataset.tid)"></div>
     <div class="task-body">
       <div class="task-name ${t.status==='done'?'done':''}">${hl(t.title)}</div>
@@ -1632,6 +1638,43 @@ function localAIResponse(msg){
 }
 
 
+
+// ── DRAG TÂCHE VERS CATÉGORIE ──
+let taskDragId=null;
+function taskDragStart(e,id){
+  taskDragId=String(id);
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',String(id));
+  setTimeout(()=>e.target.classList.add('dragging'),0);
+}
+function taskDragEnd(e){
+  e.target.classList.remove('dragging');
+  document.querySelectorAll('.sidebar-cat-item').forEach(el=>el.classList.remove('cat-drag-over'));
+  taskDragId=null;
+}
+function catDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.currentTarget.classList.add('cat-drag-over');
+}
+function catDragLeave(e){
+  if(!e.currentTarget.contains(e.relatedTarget))
+    e.currentTarget.classList.remove('cat-drag-over');
+}
+function catDrop(e,catName){
+  e.preventDefault();
+  e.currentTarget.classList.remove('cat-drag-over');
+  const id=taskDragId||e.dataTransfer.getData('text/plain');
+  if(!id||!catName)return;
+  const t=tasks.find(x=>String(x.id)===String(id));
+  if(!t)return;
+  if(t.cat===catName)return;
+  const old=t.cat;
+  t.cat=catName;
+  save(t);renderMain();updateCounts();
+  showToast(esc(t.title)+' → '+catIcon(catName)+' '+catName);
+}
+
 // ── NAVIGATION ──
 function setView(v,el){
   currentView=v;selectedId=null;searchQuery='';
@@ -1668,7 +1711,10 @@ function deleteTask(){
 function addTask(){
   const inp=document.getElementById('new-inp');if(!inp)return;
   const title=inp.value.trim();if(!title)return;
-  const t={id:Date.now(),title,due:todayStr(),time:1,cat:cats[0]?.name||'Divers',prio:'moyenne',status:'todo',resp:APP_CONFIG.userName,comments:'',starred:false,myjour:currentView==='myjour',recur:''};
+  // Si on est dans une vue catégorie, pré-remplir la catégorie
+  const catFromView=currentView.startsWith('cat-')?currentView.slice(4):null;
+  const defaultCat=catFromView||(cats[0]?.name||'Divers');
+  const t={id:Date.now(),title,due:todayStr(),time:1,cat:defaultCat,prio:'moyenne',status:'todo',resp:APP_CONFIG.userName,comments:'',starred:false,myjour:currentView==='myjour',recur:''};
   tasks.unshift(t);save(t);inp.value='';renderMain();updateCounts();
   setTimeout(()=>selectTask(t.id),50);
 }
