@@ -243,7 +243,14 @@ body{font-family:'Inter',-apple-system,sans-serif;font-size:14px;background:var(
 .plan-task.dragging{opacity:.25;transform:scale(.96)}
 .plan-col-body.drag-over{background:rgba(79,142,247,.1);outline:2px dashed rgba(79,142,247,.45);outline-offset:-3px}
 .plan-drop-hint{padding:8px;text-align:center;font-size:11px;color:rgba(79,142,247,.45);border:1.5px dashed rgba(79,142,247,.25);border-radius:var(--radius);margin:2px 0}
-.plan-nav{display:flex;align-items:center;gap:8px;padding:0 22px 10px;flex-shrink:0}
+.plan-nav{display:flex;align-items:center;gap:8px;padding:0 22px 8px;flex-shrink:0;flex-wrap:wrap}
+.plan-search-wrap{position:relative;flex:1;min-width:160px;max-width:260px}
+.plan-search-wrap input{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:5px 10px 5px 30px;font-size:12px;color:var(--text-primary);font-family:inherit;outline:none;transition:border-color .15s}
+.plan-search-wrap input:focus{border-color:var(--accent)}
+.plan-search-wrap input::placeholder{color:var(--text-muted)}
+.plan-search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none}
+.plan-task.filtered-out{display:none}
+.plan-task.search-match{outline:1.5px solid var(--accent);outline-offset:1px}
 .plan-nav-btn{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:5px 12px;font-size:12px;color:var(--text-secondary);cursor:pointer;font-family:inherit;transition:background .12s}
 .plan-nav-btn:hover{background:var(--surface3);color:var(--text-primary)}
 .plan-range{font-size:13px;color:var(--text-primary);font-weight:500;flex:1}
@@ -723,6 +730,7 @@ let notifications=JSON.parse(localStorage.getItem('raf_notifs')||'[]');
 
 let currentView='dash';
 let newTaskDue=null; // Date sélectionnée pour la nouvelle tâche
+let planningSearch=''; // Filtre full text du planning semaine
 let selectedId=null;
 let sortMode='score';
 let prioFilter='all';
@@ -1265,12 +1273,11 @@ function renderDashboard(el){
 // ── PLANNING ──
 function renderPlanning(el){
   const days=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
-  // Calcul du lundi de la semaine courante + offset (en heure locale)
   const base=new Date(TODAY);
-  const dow0=(base.getDay()+6)%7; // 0=lundi, 1=mardi... (getDay: 0=dim)
+  const dow0=(base.getDay()+6)%7;
   const mondayThisWeek=new Date(base);
   mondayThisWeek.setDate(base.getDate()-dow0);
-  mondayThisWeek.setHours(12,0,0,0); // Midi local pour éviter tout décalage DST
+  mondayThisWeek.setHours(12,0,0,0);
   const start=new Date(mondayThisWeek);
   start.setDate(mondayThisWeek.getDate()+planOffset*7);
   start.setHours(12,0,0,0);
@@ -1278,44 +1285,74 @@ function renderPlanning(el){
   const startStr=start.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
   const endStr=endD.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
   const planCls={critique:'pc',haute:'ph',moyenne:'pm',faible:'pl'};
+  const q=planningSearch.toLowerCase().trim();
+
+  // Nombre total de résultats si filtre actif
+  let matchCount=0;
+
   let cols='';
   for(let i=0;i<5;i++){
     const d=new Date(start);d.setDate(start.getDate()+i);
-    // Utiliser la date locale (pas UTC) pour éviter le décalage de fuseau horaire
     const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     const isToday=ds===todayStr();
     const dow2=days[(d.getDay()+6)%7];
-    const dayTasks=[
+    let dayTasks=[
       ...tasks.filter(t=>t.due===ds&&t.status!=='done').sort((a,b)=>calcScore(b)-calcScore(a)),
       ...tasks.filter(t=>t.due===ds&&t.status==='done')
     ];
+
+    // Appliquer le filtre texte
+    const filteredTasks=q?dayTasks.filter(t=>
+      t.title.toLowerCase().includes(q)||
+      t.cat.toLowerCase().includes(q)||
+      (t.resp||'').toLowerCase().includes(q)||
+      prioLbl(t.prio).toLowerCase().includes(q)
+    ):dayTasks;
+    if(q) matchCount+=filteredTasks.length;
+
     const totalH=dayTasks.filter(t=>t.status!=='done').reduce((a,b)=>a+b.time,0);
     const loadColor=totalH>6?'var(--red)':totalH>3?'var(--orange)':'var(--green)';
-    const cards=dayTasks.map(t=>`<div
+
+    // Surligne le titre si recherche active
+    function hlPlan(text){
+      if(!q) return esc(text);
+      // replaced by index-based highlight below
+    }
+
+    const cardsToShow=q?filteredTasks:dayTasks;
+    const cards=cardsToShow.map(t=>`<div
       class="plan-task ${planCls[t.prio]||''} ${t.status==='done'?'done-t':''}"
-      draggable="true" data-id="${t.id}"
-      data-tid="${t.id}" ondragstart="planDragStart(event,this.dataset.tid)"
+      draggable="true" data-tid="${t.id}"
+      ondragstart="planDragStart(event,this.dataset.tid)"
       ondragend="planDragEnd(event)"
-      data-tid="${t.id}" onclick="selectTask(this.dataset.tid)"
+      onclick="selectTask(this.dataset.tid)"
       title="${esc(t.title)} — glisser pour déplacer">
-      <div class="plan-task-title">${esc(t.title)}</div>
+      <div class="plan-task-title">${hlPlan(t.title)}</div>
       <div class="plan-task-meta">${catIcon(t.cat)} ${t.cat} · ${t.time}h${t.myjour?' ☀️':''}${t.recur?' 🔁':''}</div>
     </div>`).join('');
+
+    const emptyMsg=q&&filteredTasks.length===0
+      ?`<div class="plan-drop-hint" style="color:var(--text-muted);border-color:var(--border)">–</div>`
+      :(!q&&dayTasks.length===0?`<div class="plan-drop-hint">Déposer ici</div>`:'');
+
     cols+=`<div class="plan-col ${isToday?'today-col':''}">
       <div class="plan-col-hdr">
         <div style="display:flex;align-items:center">
           <div><div class="plan-col-day">${dow2}</div><div class="plan-col-date ${isToday?'today':''}">${d.getDate()}</div></div>
-          ${totalH>0?`<span style="margin-left:auto;font-size:10px;font-weight:600;color:${loadColor};background:rgba(255,255,255,.05);padding:2px 6px;border-radius:10px">${totalH.toFixed(1)}h</span>`:''}
+          ${totalH>0?`<span style="margin-left:auto;font-size:10px;font-weight:600;color:${loadColor};background:rgba(255,255,255,.05);padding:2px 6px;border-radius:10px">${q?filteredTasks.length+'/'+dayTasks.length+' tâches':totalH.toFixed(1)+'h'}</span>`:''}
         </div>
       </div>
       <div class="plan-col-body"
         ondragover="planDragOver(event)"
         ondragleave="planDragLeave(event)"
         ondrop="planDrop(event,'${ds}')">
-        ${cards||`<div class="plan-drop-hint">Déposer ici</div>`}
+        ${cards||emptyMsg}
       </div>
     </div>`;
   }
+
+  const searchInfo=q?`<span style="font-size:11px;color:var(--accent);font-weight:500">${matchCount} résultat${matchCount>1?'s':''} pour « ${esc(q)} »</span>`:'';
+
   el.innerHTML=`
     <div class="main-header">
       <div class="main-header-top"><div>
@@ -1328,9 +1365,20 @@ function renderPlanning(el){
       <button class="plan-nav-btn" onclick="planOffset--;renderMain()">◀ Semaine préc.</button>
       <button class="plan-nav-btn" onclick="planOffset=0;renderMain()">Aujourd'hui</button>
       <span class="plan-range">${startStr} — ${endStr}</span>
+      <div class="plan-search-wrap">
+        <span class="plan-search-icon">🔍</span>
+        <input type="text" placeholder="Filtrer les tâches…" value="${esc(planningSearch)}"
+          oninput="planningSearch=this.value;renderMain()"
+          onkeydown="if(event.key==='Escape'){planningSearch='';this.value='';renderMain()}"
+          id="plan-search-inp">
+      </div>
+      ${searchInfo}
       <button class="plan-nav-btn" onclick="planOffset++;renderMain()">Semaine suiv. ▶</button>
     </div>
     <div class="planning-wrap"><div class="planning-grid">${cols}</div></div>`;
+
+  // Remettre le focus sur le champ si on était en train de taper
+  if(q){setTimeout(()=>{const inp=document.getElementById('plan-search-inp');if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}},10);}
 }
 function planDragStart(e,id){dragTaskId=String(id);e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));setTimeout(()=>e.target.classList.add('dragging'),0)}
 function planDragEnd(e){e.target.classList.remove('dragging');document.querySelectorAll('.plan-col-body').forEach(c=>c.classList.remove('drag-over'));dragTaskId=null}
